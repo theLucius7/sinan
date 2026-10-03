@@ -42,7 +42,7 @@
 - 创建入口：
   - 页头“创建链路”调用 `/chains/batch`，新建 mixed 链路；
   - “创建两跳链路”和“创建有序链路”都调用 `/chains/ordered-batch`，新建 ordered 链路，其中“两跳”就是只有一跳的 ordered 路径；
-  - legacy 已没有创建入口，只剩历史数据。
+  - legacy 在界面上已没有创建入口，但 `POST /chains` 路由仍可用。
 - 把 legacy 转成 ordered 的代码（`ordered_paths/lifecycle.rs` 的 `start_candidate`）已经存在，但没有任何入口调用它。ADR 0040 原本计划把旧链路接管为单个受管段，并保留 ID、relay UUID、标签、订阅和编译字节。
 - 文档与代码有出入：`docs/api.md` 中 `/chains/batch` 和 `/subscription-sources` 的描述已过时。
 
@@ -81,7 +81,7 @@
 3. 页头“创建链路”改用 ordered 流程，停止新建 mixed 链路。
 4. 在真实数据快照上演练迁移，设备完成升级、重新发布，并通过实机验收之后，才删除 mixed 和 legacy 编译层。
 
-按仓库规则，生产迁移、发布和实机验收需要单独授权。实施前另写详细迁移方案，包括字段映射、身份与凭据保留规则、回滚方式和演练步骤。
+按仓库规则，生产迁移、发布和实机验收需要单独授权。实施前另写详细迁移方案，包括字段映射、身份与凭据保留规则、回滚方式和演练步骤。详细方案见[阶段三迁移方案](../rearchitecture-phase3-plan.md)（待用户确认）。
 
 ## 已确认的问题
 
