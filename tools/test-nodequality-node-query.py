@@ -72,8 +72,11 @@ class NodeQueryContracts(unittest.TestCase):
                 def close(self): original.close()
             process.stdin = Input()
             return process
+        # Start from the host environment without its own proxy settings (for example a
+        # developer's YARN_HTTPS_PROXY), so only the variables injected here are judged.
+        ambient = {name: value for name, value in os.environ.items() if not name.lower().endswith('proxy')}
         with patch.object(query.subprocess, 'Popen', side_effect=spawn), \
-             patch.dict(os.environ, environment or {}, clear=False), \
+             patch.dict(os.environ, {**ambient, **(environment or {})}, clear=True), \
              patch.object(query.os, 'read', side_effect=read):
             try:
                 value = query.curl_json(provider, KEY, 'self', 4, time.monotonic() + 75)

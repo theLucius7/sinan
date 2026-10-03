@@ -33,7 +33,9 @@ export default function NodeCatalog(props: Props) {
   const [details, setDetails] = useState<CatalogNode | null>(null)
   const [clone, setClone] = useState<{ node: CatalogNode; scope: string } | null>(null)
   const action = useAction()
-  useEffect(() => { catalog.reload() }, [props.refreshRevision, catalog.reload])
+  // The catalog already loads on mount; only later parent refreshes need another read.
+  const refreshRevision = useRef(props.refreshRevision)
+  useEffect(() => { if (refreshRevision.current === props.refreshRevision) return; refreshRevision.current = props.refreshRevision; catalog.reload() }, [props.refreshRevision, catalog.reload])
   const all = catalog.data ?? []
   const visible = filterCatalog(all.filter(node => !props.excludedKeys.includes(catalogKey(node))), { ...filter, server: props.server, serverRole: props.initialServerRole }).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') || catalogKey(a).localeCompare(catalogKey(b)) : sort === 'protocol' ? (a.protocol ?? '').localeCompare(b.protocol ?? '') || a.name.localeCompare(b.name) : a.sort_order - b.sort_order || a.kind.localeCompare(b.kind) || a.id - b.id)
   const pages = Math.max(1, Math.ceil(visible.length / size)), currentPage = Math.min(page, pages)

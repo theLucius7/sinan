@@ -78,6 +78,16 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     Ok(())
 }
 
+/// Device sessions are reissued on every reconnect; expired rows must not wait
+/// for the next administrator login before they are removed.
+pub async fn purge_expired_sessions(pool: &PgPool, now: i64) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
+        .bind(now)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn require_admin(state: &AppState, headers: &HeaderMap) -> ApiResult<i64> {
     let token = cookie_token(headers).ok_or(ApiError::Unauthorized)?;
     sqlx::query_scalar::<_, i64>("SELECT admin_id FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL AND expires_at > $2")
@@ -232,4 +242,47 @@ fn cookie_token(headers: &HeaderMap) -> Option<&str> {
         }
     }
     token
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test]
+    async fn expired_sessions_are_purged_and_live_sessions_kept(
+        pool: PgPool,
+    ) -> anyhow::Result<()> {
+        sqlx::query("INSERT INTO admins(id,password_hash) VALUES(1,'TEST_ONLY')")
+            .execute(&pool)
+            .await?;
+        let server: i64 =
+            sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        for (token, admin, device, expires_at) in [
+            ("expired-admin", Some(1_i64), None, 100_i64),
+            ("expired-device", None, Some(server), 200),
+            ("live-admin", Some(1), None, 301),
+            ("live-device", None, Some(server), 400),
+        ] {
+            sqlx::query(
+                "INSERT INTO sessions(token_hash,admin_id,server_id,expires_at) VALUES($1,$2,$3,$4)",
+            )
+            .bind(hash_token(token))
+            .bind(admin)
+            .bind(device)
+            .bind(expires_at)
+            .execute(&pool)
+            .await?;
+        }
+        purge_expired_sessions(&pool, 300).await?;
+        let mut remaining: Vec<String> = sqlx::query_scalar("SELECT token_hash FROM sessions")
+            .fetch_all(&pool)
+            .await?;
+        remaining.sort();
+        let mut expected = vec![hash_token("live-admin"), hash_token("live-device")];
+        expected.sort();
+        assert_eq!(remaining, expected);
+        Ok(())
+    }
 }

@@ -20,7 +20,15 @@ use fixture::{Directory, target};
 async fn real_ipv4_and_ipv6_connections_close_without_application_data() {
     use tokio::{io::AsyncReadExt, net::TcpListener};
     for host in ["127.0.0.1", "::1"] {
-        let listener = TcpListener::bind((host, 0)).await.unwrap();
+        let listener = match TcpListener::bind((host, 0)).await {
+            Ok(listener) => listener,
+            // Hosts and containers without an IPv6 stack cannot provide the owned listener.
+            Err(error) if host.contains(':') => {
+                eprintln!("skipped IPv6 case: loopback unavailable ({error})");
+                continue;
+            }
+            Err(error) => panic!("IPv4 loopback listener: {error}"),
+        };
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             for _ in 0..4 {

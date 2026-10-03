@@ -134,7 +134,17 @@ async fn connection(mut socket: WebSocket, state: AppState) -> anyhow::Result<()
                                 anyhow::ensure!((sinan_protocol::PROTOCOL_MIN..=sinan_protocol::PROTOCOL_MAX).contains(&hello.protocol_version), "unsupported protocol version");
                                 introduced = true;
                             }
-                            process_message(&state, server_id, message).await?;
+                            match message {
+                                // The device keeps a rejected batch unacknowledged in its durable
+                                // outbox and replays it. Tearing down the channel here would let one
+                                // invalid batch block later batches and every other control message.
+                                Message::UsageBatch(batch) => {
+                                    if let Err(error) = crate::plugins::ingest_usage(&state, server_id, batch).await {
+                                        tracing::warn!(server_id, %error, "usage batch rejected and left unacknowledged");
+                                    }
+                                }
+                                message => process_message(&state, server_id, message).await?,
+                            }
                         }
                         WsMessage::Ping(bytes) => sink.send(WsMessage::Pong(bytes)).await?,
                         WsMessage::Close(_) => break,

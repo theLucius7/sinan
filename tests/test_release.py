@@ -602,15 +602,21 @@ class ReleaseTests(unittest.TestCase):
         if payload is not None:
             (self.bundle / self.installer_asset).write_bytes(payload)
         # Execute the actual production path through its first Agent execution.
+        # Render it exactly as a release does so embedded preflight markers are expanded.
         text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/sinan-agent.service",
                                         ROOT / "plugins/sing-box/sinan-singbox@.service", source_root=ROOT)
         text = text.split("# Reject unverifiable legacy caches", 1)[0] + "\nexit 0\n"
+        # Select systemd through a private marker instead of creating /run/systemd/system on the host.
+        systemd_marker = self.directory / "run-systemd-system"
+        systemd_marker.mkdir(exist_ok=True)
+        self.assertEqual(text.count("[ -d /run/systemd/system ]"), 1)
+        text = text.replace("[ -d /run/systemd/system ]", "[ -d " + shlex.quote(str(systemd_marker)) + " ]")
         if core_root:
             text = text.replace("/opt/sinan/core", str(core_root))
         if forced_optimization:
-            proof_verifier = 'python3 -I - "$BUNDLE"'
-            self.assertEqual(text.count(proof_verifier), 1, "installer prefix must retain the signed proof verifier")
-            text = text.replace(proof_verifier, 'python3 -I -O - "$BUNDLE"', 1)
+            # Every embedded verifier, including the legacy preflight, must hold without assert statements.
+            self.assertGreaterEqual(text.count("python3 -I - "), 2)
+            text = text.replace("python3 -I - ", "python3 -I -O - ")
         script = self.directory / "verified-installer-prefix.sh"
         script.write_text(text)
         token = self.directory / "fixture-token"
@@ -621,7 +627,6 @@ class ReleaseTests(unittest.TestCase):
             path = commands / name
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o755)
-        Path("/run/systemd/system").mkdir(parents=True, exist_ok=True)
         modules = self.directory / "untrusted-python-path"
         modules.mkdir(exist_ok=True)
         environment_marker = self.directory / "python-environment-injected"

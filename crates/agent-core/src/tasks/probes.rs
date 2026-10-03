@@ -412,7 +412,11 @@ mod tests {
     }
     #[tokio::test]
     async fn selected_ipv6_records_the_actual_family_and_rejects_wrong_family() -> Result<()> {
-        let listener = tokio::net::TcpListener::bind("[::1]:0").await?;
+        // Hosts and containers without an IPv6 stack cannot provide the owned listener.
+        let Ok(listener) = tokio::net::TcpListener::bind("[::1]:0").await else {
+            eprintln!("skipped: IPv6 loopback is unavailable on this host");
+            return Ok(());
+        };
         let mut spec: ProbeSpec = serde_json::from_value(
             serde_json::json!({"id":Uuid::new_v4(),"name":"TEST_ONLY owned IPv6 listener","kind":"tcp","target":"::1","port":listener.local_addr()?.port(),"interval_secs":10,"carrier":"","enabled":true}),
         )?;

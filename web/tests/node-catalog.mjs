@@ -21,7 +21,7 @@ const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
   const file = resolve(dist, path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) { response.writeHead(400).end(); return }
-  try { response.writeHead(200, { 'Content-Type': mime[extname(file)] ?? 'application/octet-stream' }); response.end(await readFile(file)) } catch { response.writeHead(404).end() }
+  try { const body = await readFile(file); response.writeHead(200, { 'Content-Type': mime[extname(file)] ?? 'application/octet-stream' }); response.end(body) } catch { response.writeHead(404).end() }
 })
 await new Promise(done => server.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${server.address().port}`

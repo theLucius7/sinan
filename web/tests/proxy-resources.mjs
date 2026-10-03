@@ -13,7 +13,7 @@ const server = createServer(async (request,response) => {
   const path = new URL(request.url,'http://127.0.0.1').pathname
   const file = resolve(dist,path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) {response.writeHead(400).end();return}
-  try {response.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[extname(file)] ?? 'application/octet-stream'}).end(await readFile(file))}
+  try {const body = await readFile(file); response.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[extname(file)] ?? 'application/octet-stream'}).end(body)}
   catch {response.writeHead(404).end()}
 })
 let browser

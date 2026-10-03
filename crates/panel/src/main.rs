@@ -1,7 +1,18 @@
 #![forbid(unsafe_code)]
 
-use sinan_panel::{AppState, config::Config, router};
-use sqlx::postgres::PgPoolOptions;
+use sinan_panel::{AppState, config::Config, maintenance::supervise, router};
+use sqlx::{PgPool, postgres::PgPoolOptions};
+
+async fn telemetry_history(pool: PgPool) {
+    let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        timer.tick().await;
+        if let Err(error) = sinan_panel::telemetry::maintain(&pool).await {
+            tracing::warn!(%error, "telemetry history maintenance failed");
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,19 +30,20 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(pool, config).await?;
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(address = %listener.local_addr()?, "panel started");
-    let maintenance = tokio::spawn(sinan_panel::maintenance::run(state.clone()));
-    let exchange = tokio::spawn(sinan_panel::exchange::run(state.pool.clone()));
-    let telemetry_pool = state.pool.clone();
-    let telemetry = tokio::spawn(async move {
-        let mut timer = tokio::time::interval(std::time::Duration::from_secs(60));
-        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            timer.tick().await;
-            if let Err(error) = sinan_panel::telemetry::maintain(&telemetry_pool).await {
-                tracing::warn!(%error, "telemetry history maintenance failed");
-            }
-        }
-    });
+    // Background loops are supervised so a panic restarts them instead of
+    // silently stopping alerts, renewals, publication or history maintenance.
+    let maintenance = tokio::spawn(supervise("maintenance", {
+        let state = state.clone();
+        move || sinan_panel::maintenance::run(state.clone())
+    }));
+    let exchange = tokio::spawn(supervise("exchange-rates", {
+        let pool = state.pool.clone();
+        move || sinan_panel::exchange::run(pool.clone())
+    }));
+    let telemetry = tokio::spawn(supervise("telemetry-history", {
+        let pool = state.pool.clone();
+        move || telemetry_history(pool.clone())
+    }));
     let plugins = tokio::spawn(sinan_panel::plugins::run(state.clone()));
     let result = axum::serve(
         listener,
