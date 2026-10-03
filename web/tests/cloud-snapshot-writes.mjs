@@ -10,7 +10,7 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url)), path = '/api/p
 const server = createServer(async (request, response) => {
   const name = new URL(request.url, 'http://127.0.0.1').pathname, file = resolve(dist, name === '/' ? 'index.html' : `.${name}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) return response.writeHead(400).end()
-  try { response.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' })[extname(file)] ?? 'application/octet-stream' }).end(await readFile(file)) }
+  try { const body = await readFile(file); response.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' })[extname(file)] ?? 'application/octet-stream' }).end(body) }
   catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))

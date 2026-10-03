@@ -48,6 +48,8 @@ Agent 与面板的产品版本独立；面板当前声明支持协议范围 `1..
 
 指标每 10 秒发送，采集失败字段省略，不用 0 代表未知。流量每 30 秒采集；上下载单位是字节，负数无效。epoch 为 UUID；seq 在本地持久递增。所有时间戳使用 UTC Unix 秒。
 
+面板拒绝某个 `usage.batch`（字段无效、身份从未向该设备发布或同一 epoch/seq 内容改变）时整批回滚、不回 `usage.ack`，并记录告警日志，但不断开已认证连接；Agent 继续在本地 outbox 保留并重放该批次，后续合法批次照常入账和确认。
+
 Linux 静态信息区分两种 ABI：`libc` 保留 Agent 自身的编译 ABI，`runtime_libc` 是独立探测的宿主运行时 ABI。静态 musl Agent 在 glibc 主机上报告 `libc:"musl",runtime_libc:"gnu"`。Agent 自动更新只依据 `os`、`arch` 与 `libc`，运行时清单结合宿主 ABI 选择兼容候选；两个字段互不覆盖。
 
 `runtime_libc` 为 Linux 可选新增字段，识别成功取 `gnu` 或 `musl`；新 Agent 无法可靠识别宿主时兼容沿用自身编译 ABI。面板接受 `glibc` 作为 `gnu` 别名，非 Linux 设备不发送此字段。旧设备缺少字段时保留原 `libc` 选择路径；显式 null 或非字符串在消息解析时拒绝，显式 `unknown`、空字符串或未支持值的运行时清单返回 400，不将这些值当作字段缺失。

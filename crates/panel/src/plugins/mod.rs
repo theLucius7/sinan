@@ -31,10 +31,16 @@ pub fn router() -> Router<AppState> {
 }
 
 pub async fn run(state: AppState) {
+    use crate::maintenance::supervise;
+    // Supervise each plugin separately: one plugin's panic must not stop the others.
+    let pool = state.pool.clone();
     tokio::join!(
-        singbox::run(state.clone()),
-        ddns::run(state.pool.clone()),
-        alicloud::run(state.pool.clone())
+        supervise("sing-box", move || singbox::run(state.clone())),
+        supervise("ddns", {
+            let pool = pool.clone();
+            move || ddns::run(pool.clone())
+        }),
+        supervise("alicloud", move || alicloud::run(pool.clone()))
     );
 }
 

@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const now = Math.floor(Date.now() / 1000), at = now - 60, ip = '1.1.1.1'
@@ -52,7 +53,7 @@ const server = createServer(async (request,response) => {
   }
   const file = resolve(dist,path === '/' ? 'index.html' : `.${path}`)
   if (!file.startsWith(dist.endsWith(sep) ? dist : `${dist}${sep}`)) { response.writeHead(400).end(); return }
-  try { response.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[extname(file)] ?? 'application/octet-stream'}).end(await readFile(file)) }
+  try { const body = await readFile(file); response.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml'})[extname(file)] ?? 'application/octet-stream'}).end(body) }
   catch { response.writeHead(404).end() }
 })
 await new Promise(resolve => server.listen(0,'127.0.0.1',resolve))
@@ -69,9 +70,16 @@ try {
     })
     async function load(fixture) {
       state = {view:fixture,next:fixture,postStatus:201}
-      const answer = page.waitForResponse(response => new URL(response.url()).pathname === '/api/servers/1/ip-quality' && response.request().method() === 'GET')
+      // A response from the document replaced by reload can lose its body; wait for the fixture itself.
+      let observed
+      const answer = page.waitForResponse(async response => {
+        if (new URL(response.url()).pathname !== '/api/servers/1/ip-quality' || response.request().method() !== 'GET') return false
+        try { observed = await response.json() } catch { return false }
+        return isDeepStrictEqual(observed, fixture)
+      })
       await page.goto(`${origin}/#/servers/1/ip-info`); await page.reload()
-      assert.deepEqual(await (await answer).json(), fixture)
+      await answer
+      assert.deepEqual(observed, fixture)
       await page.getByRole('heading',{name:'服务器 IP 信息',exact:true}).waitFor()
       await page.getByRole('button',{name:'节点正式 IP 查询',exact:true}).waitFor()
     }

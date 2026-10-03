@@ -94,6 +94,45 @@ async fn websocket_acknowledges_committed_and_repeated_batches_once(pool: PgPool
 }
 
 #[sqlx::test]
+async fn rejected_batch_keeps_the_device_channel_and_acknowledges_later_batches(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let (server, mut socket, _) = panel.authenticated_device(&cookie, "traffic").await?;
+    let node = id(&panel.create_node(&cookie, server, "node").await?)?;
+    let user = id(&panel.create_user(&cookie, "member").await?)?;
+    panel.grant(&cookie, user, node).await?;
+    panel.publish_now().await?;
+    // A durable outbox can retain an identity never published to this device,
+    // for example after a reinstall onto a new server record.
+    let stale = batch(user, node + 1000, 5, 5);
+    let valid = batch(user, node, 100, 200);
+    send_envelope(&mut socket, Envelope::new("usage.batch", &stale)?).await?;
+    send_envelope(&mut socket, Envelope::new("usage.batch", &valid)?).await?;
+    loop {
+        let response = receive_envelope(&mut socket).await?;
+        if response.message_type == "usage.ack" {
+            let ack: UsageAck = response.to_payload()?;
+            assert_eq!(
+                (ack.epoch, ack.seq),
+                (valid.epoch, valid.seq),
+                "only the valid batch may be acknowledged"
+            );
+            break;
+        }
+        assert_eq!(response.message_type, "manifest.changed");
+    }
+    let batches: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM usage_batches WHERE server_id=$1")
+        .bind(server)
+        .fetch_one(&panel.state.pool)
+        .await?;
+    assert_eq!(batches, 1, "the rejected batch must be rolled back");
+    assert_eq!(totals(&panel, &cookie, "").await?["total"], "300");
+    Ok(())
+}
+
+#[sqlx::test]
 async fn invalid_records_roll_back_whole_batches_and_full_width_values_survive(
     pool: PgPool,
 ) -> Result<()> {

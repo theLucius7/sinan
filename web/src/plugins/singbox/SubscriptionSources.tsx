@@ -33,11 +33,14 @@ export default function SubscriptionSources({ onSelect, onChange }: { onSelect?:
   if (nodeView.fresh) nodeHistory.current.data = nodeView.data
   const nodes = { ...nodesQuery, ...nodeView, data: nodeView.data, getCurrent: () => nodeView.getCurrent?.(), isCurrent: () => nodeView.isCurrent?.() === true }
   const job = useResource<SubscriptionSourceJob>(selected?.active_job_id ? `${root}/subscription-source-jobs/${selected.active_job_id}` : null, 1500)
-  const previous = useRef('')
+  const previous = useRef<string | null>(null)
   const change = useRef(onChange); change.current = onChange
   useEffect(() => {
-    const revisions = sources.data?.map(source => `${source.id}:${source.current_revision_id}:${source.settings_revision}`).join(',') ?? ''
-    if (revisions && revisions !== previous.current) { previous.current = revisions; nodes.reload(); change.current?.() }
+    if (!sources.data) return
+    const revisions = sources.data.map(source => `${source.id}:${source.current_revision_id}:${source.settings_revision}`).join(',')
+    // The first snapshot is the baseline; reloading the whole page for it only repeats the initial reads.
+    if (previous.current === null) { previous.current = revisions; return }
+    if (revisions !== previous.current) { previous.current = revisions; nodes.reload(); change.current?.() }
   }, [sources.data, nodes.reload])
   const reload = () => { sources.reload(); nodes.reload(); job.reload() }
   const writeError = (source?: SubscriptionSource) => {
