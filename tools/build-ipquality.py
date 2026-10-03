@@ -348,7 +348,7 @@ def augment(archive_path, manifest_bytes, transformed, arch, directory, guard):
     helper.verify_archive(output, helper.load_manifest(changed_bytes, arch))
     metadata = helper.read_metadata(output, changed, ['usr/share/sinan-rootfs/' + name for name in
                                     ('provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
-                                     'ipquality-profile.json')])
+                                     'ipquality-profile.json')] + ['var/lib/dpkg/status'])
     return output, changed_bytes, metadata
 
 

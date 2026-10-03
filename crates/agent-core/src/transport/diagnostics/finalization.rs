@@ -9,7 +9,8 @@ pub(super) fn validate_saved_target(
     let id = Uuid::parse_str(&spec.id)?;
     let directory = config.runtime_root.join("diagnostics").join(id.to_string());
     ensure!(
-        spec.id == id.to_string()
+        !id.is_nil()
+            && spec.id == id.to_string()
             && service.unit == format!("sinan-diagnostic-{id}.service")
             && spec.job_dir == directory
             && service.working_directory == directory

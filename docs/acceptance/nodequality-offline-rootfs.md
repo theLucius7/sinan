@@ -1,6 +1,6 @@
 # 离线 NodeQuality 工具链准备与当前验收边界
 
-主线 PR #137 的默认版本 r19 保持原字节。r20 是显式离线准备制品，由完整 canonical r19 严格派生，包含 `nodequality`、`rootfs.tar.gz`、`rootfs-manifest.json`。r21 是另一个显式选择的正式节点 API 查询制品，不使用 rootfs。旧 r2–r19 的版本、签名文件及历史结果不改写。
+主线 PR #137 的原默认版本 r19 保持原字节；2026-10-03的新默认r22另见[当前分项记录](nodequality-r22-upload-and-history.md)。r20 是显式离线准备制品，由完整 canonical r19 严格派生，包含 `nodequality`、`rootfs.tar.gz`、`rootfs-manifest.json`。r21 是另一个显式选择的正式节点 API 查询制品，不使用 rootfs。旧 r2–r19 的版本、签名文件及历史结果不改写。
 
 本轮窄整合了原未合入分支 `de54084` 中的离线准备代码；其旧 r18 身份与主线不同，因此使用新 r20，保持主线 r19 的完整执行准入、正式日常 IP helper 和来源策略。原分支的测试统计不视为当前主线通过；组合编辑期间没有运行测试，冻结后的当前输入检查与统一执行收据见 [集成验收](remaining-issues-20261002.md)。
 
@@ -14,11 +14,11 @@
 
 ## PR #151 的独立 native 准备入口
 
-默认 `tools/build-nodequality.sh`、`source-helper.py`、`runner.sh.tmpl` 与 r19 保持主线原身份；r20 离线派生与 r21 typedQuery 同样不重命名。作者新增策略组合使用显式 `tools/build-nodequality-native.sh`、`native-source-helper.py`、`native-runner.sh.tmpl`，身份为 `sinan-native-r1`。`tools/build-nodequality-native-offline.py` 只从该精确组合派生 `offline-rootfs-r1`，并使用独立的 `nodequality_native_rootfs_artifact.py` 核验。两条离线身份均精确包含三个普通文件，r19/r21/native runner-only 身份不能携带离线辅助文件。
+本节原整合输入为默认 r19、显式 `sinan-native-r1`；r20 离线派生、r21 typedQuery 和 `offline-rootfs-r1` 不重命名。2026-10-03 后当前默认 `tools/build-nodequality.sh` 使用 r22，显式 `tools/build-nodequality-native.sh` 使用 native-r2；修改后的当前 wrapper/report 不重标为历史身份。两套必要历史 runner/report 及共享 rootfs 以精确字节保存，并按固定摘要读取；`tools/build-nodequality-native-offline.py` 仍只从原 native-r1 精确组合派生 `offline-rootfs-r1`，使用独立的 `nodequality_native_rootfs_artifact.py` 核验。两条离线身份均精确包含三个普通文件；r19/r21/r22/native-r1/native-r2 的 runner-only 身份不能携带离线辅助文件。
 
 新增 IPQuality 最小闭包的公开 proof 必须逐字绑定 prepare、build、export、嵌入 rootfs 的 provenance/runtime manifest 以及最终制品；父材料复验和离线重放仍是独立工厂门禁。公开 proof 不包含私有重放位置，不审批 builder、许可、复建或 full。新增受控托管工具只接受专用 Linux 的私有 TEST_ONLY namespace、固定 panel HTTPS origin 和普通 enroll `--token=` 参数；工具契约不能冒称 Agent/代理实机验收。
 
-本次合并阶段尚未执行新的测试、构建、下载、原生 controller 或完整验机。最终当前源码验证由整合任务另行冻结并记录。下面保留作者旧步骤的原始统计及输入边界，旧 r17/r18 身份属于该历史分支，不属于当前 main 的 r17/r18，不能用于认证新增组合。
+2026-10-03集中修改冻结后，已使用逐份匹配原source-lock的17份固定本地材料实际验证历史组合：r20派生12项、native-offline派生12项、r21查询派生5项全部通过，包含真实minisign对TEST_ONLY材料的签名与拒绝检查。这29项已经包含在[当前111项固定源定点验证](nodequality-r22-upload-and-history.md)中，不重复累计。完整来源摘要及整体收据见[本轮统一验收](all-open-issues-20261003.md)。没有运行实际rootfs原生复建、native controller或完整验机。下面保留作者旧步骤的原始统计及输入边界，旧 r17/r18 身份属于该历史分支，不属于当前 main 的 r17/r18，不能用于认证新增组合。
 
 ## 作者旧离线步骤归档
 

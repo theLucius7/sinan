@@ -62,7 +62,7 @@ function ResourceDetail({ selected, snapshot, onClose }: { selected: ProxyResour
     {resource.kind === 'chain' && <><p className="helper">以上拓扑为目标代输入，不能据此推断当前运行版本。下面单独列出已应用、候选与恢复代。</p><ChainLifecycle resource={resource} fresh={fresh} /></>}
     <p><Badge tone={!fresh ? 'neutral' : resource.available ? 'good' : 'bad'}>{!fresh ? '资源状态待确认' : resource.available ? '资源存在' : '资源已不可用'}</Badge></p>
     {!!resource.unavailable_reasons.length && <ul className="resource-reasons">{resource.unavailable_reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>}
-    <p className="helper">策略组：{resource.policy_group_ids.map(id => `#${id}`).join('、') || '尚未加入'}。{resource.chain_refs.length ? `被 ${resource.chain_refs.map(ref => `「${ref.name}」#${ref.id} · ${ref.hop_position === null ? '入口' : `第 ${ref.hop_position} 跳`} · 代 ${ref.generation} / ${{ applied: '已应用', candidate: '候选', recovery: '恢复' }[ref.state]}`).join('、')} 引用。` : '没有其他链路引用。'}</p>
+    <p className="helper">策略组：{resource.policy_group_ids.map(id => `#${id}`).join('、') || '尚未加入'}。{resource.chain_refs.length ? `被 ${resource.chain_refs.map(ref => `「${ref.name}」#${ref.id} · ${ref.hop_position === null ? '入口' : `第 ${ref.hop_position} 跳`} · 代 ${ref.generation} / ${{ desired: '目标', applied: '已应用', candidate: '候选', recovery: '恢复', retained: '历史依赖待清理', unresolved: '版本损坏，依赖待确认' }[ref.state]}`).join('、')} 引用。` : '没有其他链路引用。'}</p>
     <p className="helper">入口最后应用观测：{dateText(resource.entry.applied_observed_at)}{resource.exit && `；出口：${dateText(resource.exit.applied_observed_at)}`}。</p>
   </div><footer><Refresh onClick={query.reload} /><button className="button button-secondary" onClick={onClose}>关闭</button></footer></Modal>
 }

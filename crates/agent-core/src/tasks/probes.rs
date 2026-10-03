@@ -87,7 +87,7 @@ async fn synchronize_with_cadence(
     let mut refreshed: Option<Instant> = None;
     // A failed refresh revokes execution, but retains the receipt's original
     // deadline until the authenticated transport session changes.
-    let mut last_accepted: Option<AcceptedLease> = None;
+    let mut receipts = leases::LeaseReceipts::default();
     let mut acknowledgment_storage = crate::state::StorageRetry::default();
     let mut tick = tokio::time::interval(cadence.0);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -97,7 +97,7 @@ async fn synchronize_with_cadence(
             changed = clients.changed() => {
                 leases.send_replace(None);
                 refreshed = None;
-                last_accepted = None;
+                receipts = leases::LeaseReceipts::default();
                 if changed.is_err() { return Ok(()); }
                 continue;
             }
@@ -120,7 +120,7 @@ async fn synchronize_with_cadence(
                 changed = clients.changed() => {
                     leases.send_replace(None);
                     refreshed = None;
-                    last_accepted = None;
+                    receipts = leases::LeaseReceipts::default();
                     if changed.is_err() { return Ok(()); }
                     continue;
                 }
@@ -138,17 +138,9 @@ async fn synchronize_with_cadence(
                 continue;
             }
             match response.and_then(|snapshot| {
-                leases::accept_lease(
-                    snapshot,
-                    server_id,
-                    &state,
-                    client.clone(),
-                    request_started,
-                    last_accepted.as_ref(),
-                )
+                receipts.accept(snapshot, server_id, &state, client.clone(), request_started)
             }) {
                 Ok(lease) => {
-                    last_accepted = Some(lease.clone());
                     leases.send_replace(Some(lease));
                 }
                 Err(error) => {
@@ -167,7 +159,7 @@ async fn synchronize_with_cadence(
             changed = clients.changed() => {
                 leases.send_replace(None);
                 refreshed = None;
-                last_accepted = None;
+                receipts = leases::LeaseReceipts::default();
                 if changed.is_err() { return Ok(()); }
             }
             result = timeout(Duration::from_secs(5), uploading) => {

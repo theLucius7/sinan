@@ -27,6 +27,18 @@ test('unified resources distinguish colliding IDs, retain shared exits and filte
   expect(filterProxyResources(resources, 'direct', 3)).toEqual([])
   expect(filterProxyResources(resources, 'all', 2).map(proxyResourceKey)).toEqual(['direct:2', 'chain:1'])
 })
+test('retained and unresolved cleanup references keep current resource snapshots readable', () => {
+  for (const state of ['desired', 'retained', 'unresolved'] as const) {
+    const current = snapshot()
+    current.resources.data![1].chain_refs[0].state = state
+    expect(validProxyResources(current.resources.data)).toBe(true)
+    expect(validatedSnapshot(current.resources, validProxyResources).fresh).toBe(true)
+    expect(() => prepareChainBatch({ ...draft('existing'), entry_node_id: '2', exit_node_id: '1' }, current, undefined, () => requestId)).toThrow('已有授权或链路引用')
+  }
+  const invalid = snapshot().resources.data!
+  Object.assign(invalid[1].chain_refs[0], { state: 'unknown' })
+  expect(validProxyResources(invalid)).toBe(false)
+})
 test('new filter URLs and legacy chain bookmarks preserve strict query parsing', () => {
   expect(nodeRoute('/plugins/sing-box/nodes')).toEqual({ kind: 'all', chains: false })
   expect(nodeRoute('/plugins/sing-box/nodes?kind=chains&server=2')).toEqual({ kind: 'chains', chains: true, serverId: 2 })

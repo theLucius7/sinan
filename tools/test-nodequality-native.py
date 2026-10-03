@@ -297,10 +297,10 @@ class ChapterTests(unittest.TestCase):
             before = (root / "section-hardware_quality.json").read_bytes()
             write = report.write_atomic
 
-            def fail_one(path, data):
+            def fail_one(path, data, **arguments):
                 if path.name == "section-hardware_quality.json":
                     raise OSError("injected chapter write failure")
-                write(path, data)
+                write(path, data, **arguments)
 
             with mock.patch.object(report, "write_atomic", side_effect=fail_one):
                 with self.assertRaisesRegex(ValueError, "hardware_quality"):
@@ -496,7 +496,7 @@ class BuildTests(unittest.TestCase):
                                        ("@DAILY_HELPER@", (PLUGIN / "daily.py").read_text()),
                                        ("@OFFICIAL_IP_HELPER@", (PLUGIN / "official-ip.py").read_text()),
                                        ("@EXECUTION_ADMISSION@", (PLUGIN / "execution-admission.json").read_text()),
-                                       ("@CURL_SHIM@", (PLUGIN / "curl-shim.sh").read_text()),
+                                       ("@CURL_SHIM@", (PLUGIN / "runtime-curl.sh").read_text()),
                                        ("@CHROOT_SHIM@", (PLUGIN / "chroot-shim.sh").read_text())):
                     runner = runner.replace(marker, source)
                 executable = root / "nodequality"
@@ -513,7 +513,7 @@ class BuildTests(unittest.TestCase):
 
     def test_repeated_build_refuses_to_modify_the_existing_artifact_and_checksum(self):
         with tempfile.TemporaryDirectory() as directory:
-            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1"
+            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2"
             root = pathlib.Path(directory) / "nodequality" / version
             root.mkdir(parents=True)
             artifact = root / "amd64"
@@ -591,11 +591,11 @@ class BuildTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
 
     def test_shell_syntax_and_nonexecuting_help(self):
-        for script in (PLUGIN / "native-runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "chroot-shim.sh", PLUGIN.parents[1] / "tools/build-nodequality-native.sh"):
+        for script in (PLUGIN / "native-runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "runtime-curl.sh", PLUGIN / "chroot-shim.sh", PLUGIN.parents[1] / "tools/build-nodequality-native.sh"):
             subprocess.run(["bash", "-n", str(script)], check=True)
         result = subprocess.run(["bash", str(PLUGIN / "native-runner.sh.tmpl"), "--version"],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1")
+        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2")
 
     def test_existing_architecture_checksums_are_not_replaced(self):
         script = (PLUGIN.parents[1] / "tools/build-nodequality-native.sh").read_text()
@@ -784,7 +784,7 @@ work_dir=$workspace/.nodequalityfixture
             ("DAILY_HELPER", (PLUGIN / "daily.py").read_text()),
             ("OFFICIAL_IP_HELPER", (PLUGIN / "official-ip.py").read_text()),
             ("EXECUTION_ADMISSION", (PLUGIN / "execution-admission.json").read_text()),
-            ("CURL_SHIM", (PLUGIN / "curl-shim.sh").read_text()),
+            ("CURL_SHIM", (PLUGIN / "runtime-curl.sh").read_text()),
             ("CHROOT_SHIM", (PLUGIN / "chroot-shim.sh").read_text()),
         ):
             content = content.replace("@" + marker + "@\n", payload)

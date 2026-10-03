@@ -1,0 +1,225 @@
+{
+  "schema": "sinan-pr157-followup-final-local-acceptance-v1",
+  "actor": "this chat root, macOS isolated worktree",
+  "prepared_head": "92b24fb90216f332d236505ee61f00c9080b4eac",
+  "author_first_head": "5ff357cafc0ce004afcf6d7db53210652d94c465",
+  "author_final_head": "b16804fa32eea707d40b05e63724cb9c2c91544f",
+  "author_PR157_already_merged_by_other_task": "4c39eb78642d498d29dc56cd4e4cf211b3f43608",
+  "scan_main": "f102a4f3544f94c0deb12120d4480fbd1f6d1652",
+  "delivery": "Narrow followup PR for root original-directory-FD repair and corrected combined frontend artifact; all authors preserved, no source-branch overwrite",
+  "final_functional_inventory": "5d5d7668a3728d6ceee9773229553c4e40db9cb49b14a1ddad18580215308056",
+  "functional_files": 1138,
+  "all_functional_bytes_modes_sizes_rechecked_after_cleanup": true,
+  "first_stage_summary_sha256": "ded87cc437a8548e3e457cbc696277997521cea9d869e118b97566579e446e2f",
+  "rust": {
+    "toolchain": "rustc1.97.1 aarch64-apple-darwin",
+    "PostgreSQL": "owned16 loopback55432, stopped and removed",
+    "effective": {
+      "groups": 114,
+      "passed": 1050,
+      "failed": 0,
+      "ignored": 24
+    },
+    "old_effective": {
+      "groups": 114,
+      "passed": 1046,
+      "failed": 0,
+      "ignored": 24
+    },
+    "replaced_old": {
+      "groups": 69,
+      "passed": 819,
+      "failed": 0,
+      "ignored": 15
+    },
+    "retained": {
+      "groups": 45,
+      "non_doc_groups": 35,
+      "zero_doc_groups": 10,
+      "passed": 227,
+      "failed": 0,
+      "ignored": 9
+    },
+    "fresh_affected": {
+      "groups": 69,
+      "build_scopes": 67,
+      "passed": 823,
+      "failed": 0,
+      "ignored": 15
+    },
+    "physical_default_result_group_attempts": 184,
+    "zero_doc_groups_inventory_only": 10,
+    "extra_prior_mac_dual_stack_ICMP": 1,
+    "default_ignored_remains24": true,
+    "new_conditional_ipv6_messages": [],
+    "not_single_uninterrupted_or_single_first_pass": true,
+    "retained_actual_sources": 188,
+    "all_unique_source_identities": 651,
+    "generated_OUT_DIR_old_hash_not_captured": "explicit unchanged generator/proto/graph and timestamp/fresh-artifact continuity retained; no invented historical SHA"
+  },
+  "web": {
+    "Bun_pass": 167,
+    "Bun_fail": 0,
+    "expectations": 2258,
+    "test_files": 30,
+    "forced_TS_runs": 1,
+    "Vite_builds": 1,
+    "dist_files": 25,
+    "dist_bytes": 983172,
+    "complete_affected_browser_groups": 13,
+    "physical_group_attempts": 16,
+    "first_augmented_successes": 10,
+    "extra320_failed_attempts": 3,
+    "original_complete_replacement_groups": 3,
+    "effective_pages": 181,
+    "private_requests": 7832,
+    "write_requests": 346,
+    "external_requests": 0,
+    "page_errors": 0,
+    "extra320_classification": "Existing unchanged global body min-width340 produces page overflow; original complete scenarios pass, extra320 failures remain recorded; no CSS/auth edits or scope expansion",
+    "node_IP_initial_extra_audit_limitation": "context pages not captured by first external audit; zero audit entries not certified zero requests; final original complete scope truly audited"
+  },
+  "compiled_handler": {
+    "paths": 26,
+    "GET_HEAD_calls": 52,
+    "asset_bytes_digest_size_MIME_cache_nosniff": true,
+    "formal_release_build": false,
+    "network_listener": false
+  },
+  "python_install_ip": {
+    "effective_whole_scopes": 20,
+    "retained_whole_scopes": 16,
+    "fresh_replacement_and_added_whole_scopes": 4,
+    "complete_method_pass": 403,
+    "method_skip": 14,
+    "setup_class_skip": 1,
+    "setup_class_unstarted_methods": 6,
+    "class_decorator_skip": 1,
+    "class_decorator_skipped_methods": 1,
+    "subcases_pass": 538,
+    "fail": 0,
+    "zero_dispatch_attempt_not_counted": "native bundle external script had no main; first actual explicit-loader dispatch is1class-decorator skip"
+  },
+  "nodequality": {
+    "effective_entrypoints": 38,
+    "distinct_methods_started": 574,
+    "complete_methods_pass": 520,
+    "method_skip": 53,
+    "partial_parent_count": 1,
+    "partial_parent_skipped_subcases": 10,
+    "subcases_pass": 1049,
+    "subcases_skip": 10,
+    "current_fail": 0,
+    "physical_method_starts": 671,
+    "fresh_node_query_whole_methods": 15,
+    "fresh_node_query_subcases": 35,
+    "other37_scopes_not_repeated": "their consumed product/helpers/fixtures/fixed sources unchanged"
+  },
+  "static": {
+    "fmt": true,
+    "core_boundary": true,
+    "workspace_all_targets_locked_clippy_warnings_deny": true,
+    "unchanged_stage1_bootstrap_and_shell": true,
+    "Python_AST_stage1": 169,
+    "changed_Python_AST": 2,
+    "changed_MJS_syntax": 35,
+    "final_document_links": {
+      "whole_markdown_files": 2,
+      "relative_file_links": 169,
+      "findings": 0,
+      "diff_whitespace_rc": 0,
+      "receipt_sha256": "e6485d52f60713e4ca81d7a6a745222b35b604ebe920ef489734e8d92323d46f"
+    }
+  },
+  "protected": "48 migrations,4 source workflows,Cargo.lock,source locks/helpers and five exact historical source copies preserved",
+  "source_fixed_official_files": 17,
+  "source_fixed_official_bytes": 687969,
+  "first_failure_summaries": [
+    "Rust PATH omitted actual system sha256sum; failed2 panel unit methods then exact retained whole panel library passed237.",
+    "Shared watcher framework temporary path /var versus canonical /private/var failed4 subcases across2 entrypoints; complete watcher scopes then passed24+24.",
+    "Install/IP external recorder missed unittest runner callbacks;17 real initial executions have no valid per-method accounting and are not added to current effective totals.",
+    "NQ recorder preflight assumed39 instead of actual38, zero product tests executed in preflight.",
+    "Protected Git mode recorder compared0644 with100644; only external recorder repaired.",
+    "External compiled-handler linker lacked existing OpenSSL native search path; zero handler calls before correction."
+  ],
+  "proof_identities": {
+    "rust": {
+      "sha256": "08f9ae3fe046ad9a72617a6336568af1612199c09f911b8a21aef3b8b3446963",
+      "retained_bounded_file": "rust-final-effective-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "rust_actual_sources": {
+      "sha256": "677b76a56c302fbb74683f14f0f2ea8fe2c9c81f57b06ac27f279c2bddd620d9",
+      "retained_bounded_file": "rust-final-source-map.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "web": {
+      "sha256": "54cf0c1cf091a643be9a1d41794034803b5dc89e563c1ab661db076b7d4b4408",
+      "retained_bounded_file": "web-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "embedded_handler": {
+      "sha256": "621468ff96ba7b4d8b38369c4012a97de90b639c0cb70034c1698edc2ee2fc3f",
+      "retained_bounded_file": "compiled-handler-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "python_affected": {
+      "sha256": "56e97d6d3efd4a46e343e55761b205393a43f0a04e68070df07a512e7c3b59bb",
+      "retained_bounded_file": "python-effective-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "python_retained_inputs": {
+      "sha256": "0274934ea74511fb2d8cdaaa04d16f8596e3dd3242b62651f33898afab086989",
+      "retained_bounded_file": "python-prior-source-map.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "nq_affected": {
+      "sha256": "6e3d2ee22cea65f54c76624a90c941edf6f0b91a70eb9615fcaa3967e5d58559",
+      "retained_bounded_file": "nq-node-query-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "nq_prior_effective": {
+      "sha256": "b8d115266090931e46bd80d364147314cbc32e814e9d638bc475be2c4ce09235",
+      "retained_bounded_file": "nq-stage1-effective-coverage.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "protected": {
+      "sha256": "aded9315b2f8a0b67d781816658d8e60c2854a7d2b328ede3cceac97c3ffebf0",
+      "retained_bounded_file": "protected-source-identities.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "cleanup": {
+      "sha256": "338ec0aeb8e97316b849b6ecafb367fe6b729732be7a3871a932d80859c51958",
+      "retained_bounded_file": "cleanup-proof.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "failures": {
+      "sha256": "b5db47b3eb5b95b9b30e6d5ff3295fb0f7599c3dd73dea745891d3e2cf16aa38",
+      "retained_bounded_file": "bounded-failures.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    },
+    "static": {
+      "sha256": "04c68d1b57cc89fe5b626bd38aeedf749a5cb5688d913bec99ae1fb4bec98b25",
+      "retained_bounded_file": "static-summary.json",
+      "kind": "actual executed result or actual source-identity mapping; full raw material later cleaned"
+    }
+  },
+  "cleanup": {
+    "completed": true,
+    "exact_deleted_paths": 12,
+    "deleted_logical_bytes": 4670560104,
+    "free_space_delta_observed": 508411904,
+    "raw_logs_depfiles_executables_databases_caches_deleted": true,
+    "latest_bounded_source_result_error_summaries_retained": true,
+    "latest_tracked25_dist_and_current_source_tests_preserved": true,
+    "owned_watcher_cleanup_receipts": 32,
+    "other_worktrees_shared_browsers_toolchains_credentials_production_untouched": true,
+    "no_global_prune_or_SSH": true
+  },
+  "external_pending": "Linux/systemd and sustained Agent/proxy/native tool matrix, full rights and secondary transfers/host side effects, dual architecture native closure, historical official0.1/0.2 artifacts, current private media accounts, Windows PS/UAC/ACL, Reality public failure root cause remain unverified. No native full, SSH, formal signing, release, production deployment, cloud/DNS/billing or real notifications.",
+  "ci": "Four source workflows remain disabled_manually; exact remote head/main runs/check/status must be read again before delivery; absent/cancelled not passing. DynamicCopilot independent active untouched.",
+  "formal_signing_release_production_deployment": false,
+  "author_linux_results_not_counted_as_this_root_execution": true,
+  "historical_PR155_raw_deleted_not_reconstructed": true,
+  "captured_epoch": 1791024349.070274
+}

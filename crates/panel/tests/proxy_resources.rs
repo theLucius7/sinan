@@ -1534,6 +1534,13 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
                 "generation":1,
                 "hop_position":null,
                 "state":"candidate"
+            }, {
+                "id":chain,
+                "name":"Retained owner",
+                "role":"entry",
+                "generation":99,
+                "hop_position":null,
+                "state":"unresolved"
             }])
         );
     }
@@ -1568,7 +1575,37 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
                 .as_str()
                 .is_some_and(|value| value.contains("仍被"))
         );
-        assert!(error.get("references").is_none());
+        assert_eq!(error["references"]["policies"], json!([]));
+        assert_eq!(
+            error["references"]["chains"],
+            json!([{
+                "id":chain,"name":"Retained owner","role":"entry",
+                "generation":99,"hop_position":null,"state":"unresolved"
+            }])
+        );
+    }
+    assert_eq!(state(&pool).await?, before);
+    // Missing selected versions retain the raw hop with an actionable owner,
+    // across the old, numeric and ordered direct-node deletion endpoints.
+    for path in [
+        format!("/nodes/{exit}"),
+        format!("/proxy-resources/direct/{exit}"),
+        format!("/ordered-proxy-resources/direct/{exit}"),
+    ] {
+        let response = panel
+            .admin(Method::DELETE, &format!("{ROOT}{path}"), &cookie, None)
+            .await?;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let error: Value = response.json().await?;
+        no_private_fields(&error);
+        assert_eq!(error["references"]["policies"], json!([]));
+        assert_eq!(
+            error["references"]["chains"],
+            json!([{
+                "id":chain,"name":"Retained owner","role":"exit",
+                "generation":1,"hop_position":1,"state":"unresolved"
+            }])
+        );
     }
     assert_eq!(state(&pool).await?, before);
     let generations: Vec<i64> = sqlx::query_scalar(
@@ -1607,7 +1644,13 @@ async fn retired_node_cleanup_keeps_damaged_ordered_owners_and_bounded_public_re
                 .len(),
             32
         );
-        assert_eq!(error["references"]["chains"], json!([]));
+        assert_eq!(
+            error["references"]["chains"],
+            json!([{
+                "id":chain,"name":"Retained owner","role":"entry",
+                "generation":99,"hop_position":null,"state":"unresolved"
+            }])
+        );
     }
     assert_eq!(state(&pool).await?, before);
     Ok(())

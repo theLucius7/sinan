@@ -201,12 +201,15 @@ forwarding is used; missing configured media adapters remain NotAttempted.
 Local fixture acceptance is not official-account, billing or media permission.
 
 Independent native policy preparation (PR #151 integration):
-The default build-nodequality.sh, source-helper.py, runner.sh.tmpl and numeric
-r2-r21 historical identities retain their main-line bytes and meanings. The
+The numeric r2-r21 historical identities retain their original bytes and
+meanings. The current default build-nodequality.sh packages the distinct r22
+runner. Exact historical r19 runner/report/rootfs source snapshots are retained
+solely for strict r20/r21 and native offline identity validation. The
 explicit build-nodequality-native.sh binds native-source-helper.py,
 native-runner.sh.tmpl and native browser/Netflix/report helpers to the distinct
-sinan-native-r1 identity. The explicit build-nodequality-native-offline.py binds
-its independently validated runtime archive to offline-rootfs-r1. These new
+sinan-native-r2 identity. The historical native-r1 runner/report snapshots remain
+the exact source used by build-nodequality-native-offline.py to bind its
+independently validated runtime archive to offline-rootfs-r1. These new
 bytes never reuse main-line r14-r21 labels or certify their historical receipts.
 The native policy chain retains the original 17 sources and licenses, composes
 its bounded browser/query/access/Netflix policies, and suppresses the borrowed
@@ -215,3 +218,21 @@ credential or public authorization. All new full starts are still rejected
 before external prerequisites or workspace changes. Canonical source retention,
 synthetic fixtures, signed preparation and native device acceptance are separate
 records; neither toolchain rights nor a formal release is granted here.
+
+Sinan r22 modifications (2026-10-03): the default host curl payload is now
+runtime-curl.sh. It accepts only the exact canonical report POST argument shape
+before capturing stdin. A permitted report URL cannot authorize extra URLs,
+configuration files, input files, methods, redirects or additional transfers.
+With explicit uploads enabled, native curl receives --disable first and fixed
+HTTPS protocol limits. The same bounded local capture and response collector
+remain. The original curl-shim.sh is retained for historical/native-r1 identities;
+native-r2 uses the same runtime-curl.sh boundary as default r22. New policy
+bytes never reuse a signed r19 or sinan-native-r1 identity. This
+boundary does not authorize third-party binary traffic or proprietary tooling.
+
+The default r22 runner also binds its chapter watcher to the original owner
+process identity; owner recovery and cleanup are documented separately. The
+static inventory records executable-mode files omitted from private paths as
+unread metadata, rejects sparse members, and explicitly marks its public-path
+identity coverage incomplete even if an identity declaration matches. No
+private configuration is read and no inventory result grants tool rights.

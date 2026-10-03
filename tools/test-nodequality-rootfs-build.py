@@ -6,6 +6,7 @@ actual Debian snapshot, an approved builder image or a reproducible real rootfs.
 """
 import copy
 import gzip
+import hashlib
 import importlib.util
 import io
 import json
@@ -125,10 +126,11 @@ class RootfsBuildTests(unittest.TestCase):
         (tree / 'usr/bin/bash').write_bytes(b'#!/bin/bash\n# inert owned fixture\n')
         (tree / 'usr/bin/bash').chmod(0o755)
         (tree / 'usr/share/doc/fixture/copyright').write_bytes(b'Owned fixture; no third-party license claim.\n')
-        status = b'Package: fixture\nVersion: 1.0\nArchitecture: amd64\nStatus: install ok installed\n\n'
+        status = b'Package: fixture\nVersion: 1.0\nArchitecture: amd64\nStatus: install ok installed\nSource: fixture (1.0)\n\n'
         (tree / 'var/lib/dpkg/status').write_bytes(status)
         prepared = copy.deepcopy(prepared)
-        prepared['lock']['packages'] = [{'name': 'fixture', 'version': '1.0', 'architecture': 'amd64'}]
+        prepared['lock']['packages'] = [copy.deepcopy(next(row for row in prepared['lock']['packages']
+                                                          if row['name'] == 'fixture'))]
         entries = BUILD.tree_entries(tree, BUILD.Deadline(10))
         installed = [{'name': 'fixture', 'version': '1.0', 'architecture': 'amd64'}]
         log = b'owned inert fixture, no actual build\n'
@@ -187,7 +189,36 @@ class RootfsBuildTests(unittest.TestCase):
         receipt['profile_proof_sha256'] = prepared['profile_proof_sha256']
         (tree.parent / 'build-receipt.json').write_bytes(BUILD.canonical(receipt))
         profile = types.SimpleNamespace(ensure_cleanup_safe=lambda output: None,
-                                        validate_public=lambda value, lock, deadline=None: value)
+                                        validate_public=lambda value, lock, deadline=None: value,
+                                        refuse_export=False)
+        def inspect_export(directory, manifest, observed_prepared, deadline):
+            self.assertEqual(observed_prepared, prepared)
+            self.assertIsInstance(deadline, BUILD.Deadline)
+            archive_path = Path(directory) / 'rootfs.tar.gz'
+            archived = archive_path.read_bytes()
+            self.assertEqual(manifest['archive'], {'size': len(archived),
+                                                  'sha256': hashlib.sha256(archived).hexdigest()})
+            with tarfile.open(archive_path, 'r:gz') as archive:
+                self.assertEqual(archive.extractfile(BUILD.META_DIR + '/ipquality-profile.json').read(), content)
+                status = archive.extractfile('var/lib/dpkg/status').read()
+                self.assertEqual(status, (tree / 'var/lib/dpkg/status').read_bytes())
+                self.assertIn(b'Source: fixture (1.0)\n', status)
+                self.assertEqual(archive.extractfile(BUILD.META_DIR + '/inputs-lock.json').read(),
+                                 (self.root / 'prepared/inputs-lock.json').read_bytes())
+                sources = archive.extractfile(BUILD.META_DIR + '/source-inventory.json').read()
+                self.assertEqual(json.loads(sources), prepared['source_inventory'])
+                self.assertEqual(hashlib.sha256(sources).hexdigest(), prepared['source_inventory_sha256'])
+                licenses = json.loads(archive.extractfile(BUILD.META_DIR + '/license-inventory.json').read())
+                self.assertEqual(licenses['packages'], [{'name': 'fixture', 'version': '1.0',
+                                                        'architecture': 'amd64'}])
+            entries = {row['path']: row for row in manifest['entries']}
+            self.assertEqual(entries[BUILD.META_DIR + '/ipquality-profile.json']['sha256'],
+                             hashlib.sha256(content).hexdigest())
+            self.assertEqual(entries['var/lib/dpkg/status']['sha256'], hashlib.sha256(status).hexdigest())
+            if profile.refuse_export:
+                raise ValueError('TEST_ONLY archive inventory admission refused')
+            return licenses['packages']
+        profile.verify_export = mock.Mock(side_effect=inspect_export)
         return tree, prepared, profile
 
     def test_profile_callback_proof_is_carried_into_export_provenance_and_runtime(self):
@@ -201,6 +232,11 @@ class RootfsBuildTests(unittest.TestCase):
             deadline = BUILD.Deadline(60)
             deadline.capacity = types.SimpleNamespace(check=lambda *args, **kwargs: None)
             self.assertEqual(BUILD.verify_export(destination, prepared, 'amd64', _deadline=deadline), receipt)
+            profile.verify_export.assert_called_once()
+            profile.refuse_export = True
+            with self.assertRaisesRegex(ValueError, 'archive inventory admission refused'):
+                BUILD.verify_export(destination, prepared, 'amd64', _deadline=deadline)
+            self.assertEqual(profile.verify_export.call_count, 2)
         self.assertEqual(receipt['profile_proof_sha256'], prepared['profile_proof_sha256'])
         self.assertEqual((destination / 'ipquality-profile.json').read_bytes(), prepared['profile_proof_bytes'])
         provenance = BUILD.decode((destination / 'provenance.json').read_bytes())

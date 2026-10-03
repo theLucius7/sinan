@@ -647,6 +647,101 @@ async fn reusing_a_lease_never_extends_its_monotonic_deadline_after_clock_recali
     Ok(())
 }
 
+#[tokio::test]
+async fn intervening_lease_receipts_cannot_extend_or_rewrite_an_earlier_live_identity() -> Result<()>
+{
+    let fixture = Fixture::new()?;
+    let client = local_client()?;
+    let mut snapshot = accepted(&client, &[spec(1, false)], 1, Duration::from_secs(90)).snapshot;
+    snapshot.issued_at -= 60;
+    snapshot.expires_at -= 60;
+    let mut receipts = leases::LeaseReceipts::default();
+    let first = receipts.accept(
+        snapshot.clone(),
+        7,
+        &fixture.state,
+        client.clone(),
+        Instant::now() - Duration::from_secs(5),
+    )?;
+    let mut intervening = snapshot.clone();
+    intervening.id = Uuid::new_v4();
+    receipts.accept(
+        intervening,
+        7,
+        &fixture.state,
+        client.clone(),
+        Instant::now(),
+    )?;
+    fixture
+        .state
+        .lock()
+        .unwrap()
+        .set_json("clock_offset_ms", &-60_000_i64)?;
+    let repeated = receipts.accept(
+        snapshot.clone(),
+        7,
+        &fixture.state,
+        client.clone(),
+        Instant::now(),
+    )?;
+    assert_eq!(repeated.deadline, first.deadline);
+    let mut rewritten = snapshot;
+    rewritten.expires_at -= 1;
+    assert!(rewritten.valid());
+    assert!(
+        receipts
+            .accept(rewritten, 7, &fixture.state, client, Instant::now())
+            .is_err()
+    );
+    assert!(fixture.state.lock().unwrap().probe_results()?.is_empty());
+    assert_eq!(fixture.ops.starts.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_receipt_retention_is_bounded_and_advancing_issuance_releases_old_receipts()
+-> Result<()> {
+    let fixture = Fixture::new()?;
+    let client = local_client()?;
+    let original = accepted(&client, &[spec(1, false)], 1, Duration::from_secs(90)).snapshot;
+    let mut receipts = leases::LeaseReceipts::default();
+    for _ in 0..64 {
+        let mut snapshot = original.clone();
+        snapshot.id = Uuid::new_v4();
+        receipts.accept(snapshot, 7, &fixture.state, client.clone(), Instant::now())?;
+    }
+    let mut overflow = original.clone();
+    overflow.id = Uuid::new_v4();
+    assert!(
+        receipts
+            .accept(overflow, 7, &fixture.state, client.clone(), Instant::now())
+            .is_err()
+    );
+    let saved = fixture
+        .state
+        .lock()
+        .unwrap()
+        .get_json::<serde_json::Value>("probes:lease-high-water:7")?
+        .unwrap();
+    assert_eq!(saved["issued_at"], original.issued_at);
+    fixture
+        .state
+        .lock()
+        .unwrap()
+        .set_json("clock_offset_ms", &91_000_i64)?;
+    let mut renewed = original.clone();
+    renewed.id = Uuid::new_v4();
+    renewed.issued_at += 91;
+    renewed.expires_at += 91;
+    receipts.accept(renewed, 7, &fixture.state, client.clone(), Instant::now())?;
+    assert!(
+        receipts
+            .accept(original, 7, &fixture.state, client, Instant::now())
+            .is_err()
+    );
+    Ok(())
+}
+
 struct Reply {
     status: u16,
     body: String,

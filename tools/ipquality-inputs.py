@@ -29,7 +29,7 @@ SNAPSHOT_FIELDS = ('dev', 'ino', 'size', 'sha256', 'mode', 'uid', 'gid',
 CODE_FILES = ('tools/ipquality-inputs.py', 'tools/ipquality-rootfs.py',
               'tools/ipquality-profile.py',
               'tools/ipquality-inputs-capacity.py', 'tools/nodequality-rootfs-collect.py',
-              'tools/nodequality-rootfs-build.py')
+              'tools/nodequality-rootfs-build.py', 'plugins/nodequality/rootfs.py')
 
 
 def require(condition, message):

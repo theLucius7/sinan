@@ -19,7 +19,7 @@ use sqlx::Row;
 use std::collections::BTreeMap;
 mod modes;
 pub mod node_queries;
-pub const PLUGIN_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19";
+pub const PLUGIN_VERSION: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22";
 pub const FULL_START_GATE_CAPABILITY: &str = "diagnostic:nodequality-full-start-gate";
 pub const FULL_START_DENIAL: &str = "完整验机已暂停：离线受控工具链尚未就绪，旧工具链仍会下载在线代码、上传内层报告或修改宿主 swap。日常检查和已有报告回收、取消仍可使用。";
 const TIMEOUT_SECS: u64 = 1800;

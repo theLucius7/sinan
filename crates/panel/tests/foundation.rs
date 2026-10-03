@@ -1034,6 +1034,14 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let catalogue: Value = response.json().await?;
     assert_eq!(
+        catalogue["policy"],
+        json!({
+            "default_version": "latest",
+            "selection": "highest_stable_signed_protocol_compatible_for_target",
+            "minimum_version": "0.3.0"
+        })
+    );
+    assert_eq!(
         catalogue["versions"][0]["targets"],
         json!(["amd64", "arm64", "freebsd-arm64", "macos-arm64"])
     );
@@ -1061,6 +1069,26 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
         assert_eq!(catalogue["versions"][0]["targets"], expected);
         assert_eq!(catalogue["versions"][0]["version"], "0.3.0");
         assert_eq!(catalogue["versions"][0]["tag"], "agent-v0.3.0");
+    }
+    for (version, target, platform, expected) in [
+        ("99.0.0", "linux-musl-amd64", "unix", "尚未导入"),
+        ("0.3.0", "macos-arm64", "windows", "该平台可安装的制品"),
+    ] {
+        let response = panel
+            .client
+            .get(&bootstrap_url)
+            .query(&[
+                ("token", token.as_str()),
+                ("agent_version", version),
+                ("target", target),
+                ("platform", platform),
+            ])
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let refusal: Value = response.json().await?;
+        assert!(refusal["error"].as_str().unwrap().contains(expected));
+        assert!(refusal["versions"].is_null());
     }
     for (name, value) in [("target", "riscv64"), ("platform", "unsupported")] {
         assert_eq!(

@@ -24,7 +24,7 @@ from nodequality_native_fixture_process import OwnedProcesses
 FULL_START_GUARD = "[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'"
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
-VERSION = 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1'
+VERSION = 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2'
 
 
 def module(name, path):
@@ -160,7 +160,7 @@ class SourceTests(unittest.TestCase):
                                   ('SOURCE_HELPER', 'native-source-helper.py'), ('REPORT_POLICY_HELPER', 'report-policy.py'), ('SWAP_POLICY_HELPER', 'swap-policy.py'), ('DEPENDENCY_POLICY_HELPER', 'dependency-policy.py'), ('DATA_POLICY_HELPER', 'data-policy.py'), ('LOADER_POLICY_HELPER', 'loader-policy.py'), ('RANKING_POLICY_HELPER', 'ranking-policy.py'), ('IP_SCORE_POLICY_HELPER', 'ip-score-policy.py'), ('BROWSER_POLICY_HELPER', 'native-browser-policy.py'), ('QUERY_POLICY_HELPER', 'query-policy.py'), ('ACCESS_POLICY_HELPER', 'access-policy.py'), ('NETFLIX_POLICY_HELPER', 'native-netflix-policy.py'), ('OPENAI_POLICY_HELPER', 'openai-policy.py'), ('REPORT_HELPER', 'native-report.py'),
                                   ('EXIT_OBSERVER', 'exit-observer.sh'), ('DAILY_HELPER', 'daily.py'),
                                   ('OFFICIAL_IP_HELPER', 'official-ip.py'), ('EXECUTION_ADMISSION', 'execution-admission.json'),
-                                  ('CURL_SHIM', 'curl-shim.sh'), ('CHROOT_SHIM', 'chroot-shim.sh')]]:
+                                  ('CURL_SHIM', 'runtime-curl.sh'), ('CHROOT_SHIM', 'chroot-shim.sh')]]:
             runner = runner.replace('@' + name + '@\n', payload)
         path = self.root / 'nodequality'
         path.write_text(runner)

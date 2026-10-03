@@ -11,6 +11,7 @@ const R6: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r6";
 const R12: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r12";
 const R14: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r14";
 const R18: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r18";
+const R19: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19";
 const R17: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r17";
 const R15: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r15";
 const R16: &str = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r16";
@@ -40,8 +41,10 @@ async fn saved_full_jobs_are_not_prepared_but_keep_each_report_version() {
         R16,
         R17,
         R18,
+        R19,
         VERSION,
         sinan_adapter_nodequality::NATIVE_VERSION,
+        sinan_adapter_nodequality::NATIVE_LEGACY_VERSION,
         sinan_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
         sinan_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
         sinan_adapter_nodequality::NODE_QUERY_VERSION,
@@ -69,7 +72,7 @@ async fn saved_full_jobs_are_not_prepared_but_keep_each_report_version() {
 }
 
 #[tokio::test]
-async fn r4_through_r21_daily_jobs_keep_mode_targets_budget_and_saved_chapters() {
+async fn r4_through_r22_daily_jobs_keep_mode_targets_budget_and_saved_chapters() {
     for version in [
         R4,
         R5,
@@ -86,8 +89,10 @@ async fn r4_through_r21_daily_jobs_keep_mode_targets_budget_and_saved_chapters()
         R16,
         R17,
         R18,
+        R19,
         VERSION,
         sinan_adapter_nodequality::NATIVE_VERSION,
+        sinan_adapter_nodequality::NATIVE_LEGACY_VERSION,
         sinan_adapter_nodequality::NATIVE_OFFLINE_ROOTFS_VERSION,
         sinan_adapter_nodequality::OFFLINE_ROOTFS_VERSION,
         sinan_adapter_nodequality::NODE_QUERY_VERSION,
@@ -247,13 +252,20 @@ async fn official_node_queries_require_exact_version_and_private_bounded_inputs(
 }
 
 #[test]
-fn namespaced_preparation_keeps_r19_default_and_exact_auxiliary_roles() {
-    use sinan_adapter_nodequality::{NATIVE_OFFLINE_ROOTFS_VERSION, NATIVE_VERSION};
+fn namespaced_preparation_keeps_r22_default_and_exact_auxiliary_roles() {
+    use sinan_adapter_nodequality::{
+        NATIVE_LEGACY_VERSION, NATIVE_OFFLINE_ROOTFS_VERSION, NATIVE_VERSION,
+    };
     let adapter = NodeQualityAdapter::new();
-    assert_eq!(VERSION, "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19");
+    assert_eq!(VERSION, "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22");
     assert!(
         adapter
             .auxiliary_files_for_version(NATIVE_VERSION)
+            .is_empty()
+    );
+    assert!(
+        adapter
+            .auxiliary_files_for_version(NATIVE_LEGACY_VERSION)
             .is_empty()
     );
     for version in [
@@ -274,7 +286,7 @@ fn namespaced_preparation_keeps_r19_default_and_exact_auxiliary_roles() {
             .is_empty()
     );
     for version in [
-        R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18, VERSION,
+        R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18, R19, VERSION,
     ] {
         assert!(adapter.auxiliary_files_for_version(version).is_empty());
     }

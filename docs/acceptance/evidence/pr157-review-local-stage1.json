@@ -1,0 +1,136 @@
+{
+  "schema": "sinan-pr157-local-review-stage1-v1",
+  "actor": "current PR review chat; fresh macOS local execution",
+  "author_head": "5ff357cafc0ce004afcf6d7db53210652d94c465",
+  "base": "58dce7799d9aa6757d9dcb1473e1e463268bcdcc",
+  "first_functional_inventory": "9509bc8e34cfc2e9f2c1f236578245ec388d54563e656db3183eef4db2fbab7c",
+  "fixture_repaired_inventory": "be7db2e5bcee80dd26b73aa12b6184c6ef9c49953d50fcbe16685ab094a8a4cd",
+  "functional_files": 1138,
+  "changes": "Both current NQ collectors use retained private directory descriptors, bounded per-chunk reads, no-follow/nonblocking ordinary files, ownership/cancellation/deadline checks, descriptor-bound output and bounded locks. Historical r19/native1 preserved. One macOS canonical temporary-path fixture repaired.",
+  "rust": {
+    "default_passed": 1046,
+    "failed": 0,
+    "ignored": 24,
+    "effective_result_groups": 114,
+    "initial_batches": 88,
+    "raw_initial_passed": 1013,
+    "raw_initial_failed": 2,
+    "whole_failed_panel_library_completed": 237,
+    "previously_unattempted_libraries_completed": 31,
+    "actual_dep_sources": 637,
+    "extra_icmp_loopback_passed": 1,
+    "extra_not_subtracted_from_ignored": true
+  },
+  "web": {
+    "bun_passed": 167,
+    "expects": 2258,
+    "files": 30,
+    "forced_typescript_checks": 1,
+    "vite_builds": 1,
+    "identical_dist_files": 25,
+    "identical_dist_bytes": 983047,
+    "whole_browser_groups": [
+      "ordered-chains",
+      "proxy-resources"
+    ],
+    "widths": [
+      1440,
+      390,
+      320
+    ],
+    "page_requests": 642,
+    "private_writes": 45,
+    "external_page_requests": 0,
+    "page_errors": 0
+  },
+  "embedded_handler": {
+    "compiled_current_default_debug_embed": true,
+    "dist_files": 25,
+    "request_paths_with_root": 26,
+    "get_head_calls": 52,
+    "bytes_sha_length_mime_cache_nosniff": true,
+    "formal_release_build": false
+  },
+  "python_install_ip": {
+    "whole_entrypoints": 17,
+    "methods_started": 374,
+    "complete_passed": 360,
+    "method_skipped": 14,
+    "class_skipped": 1,
+    "methods_not_started_in_skipped_class": 6,
+    "subcases_passed": 482,
+    "failures": 0,
+    "physical_entrypoint_attempts": 34,
+    "first_recording_callbacks_missing_not_counted": true
+  },
+  "nodequality": {
+    "whole_entrypoints": 38,
+    "distinct_methods_started": 574,
+    "complete_passed": 520,
+    "method_skipped": 53,
+    "partial_parent_with_10_subcase_skips": 1,
+    "class_skipped": 0,
+    "subcases_passed": 1049,
+    "subcases_skipped": 10,
+    "current_failures": 0,
+    "physical_method_starts": 656,
+    "whole_watcher_repair_method_runs": 48,
+    "gnu_previously_unverified_whole_methods": 34
+  },
+  "static": {
+    "python_ast_files": 169,
+    "GNU_shell_syntax_files": 13,
+    "findings": 0,
+    "fmt": true,
+    "workspace_all_targets_clippy": true,
+    "core_boundary": true,
+    "bootstrap_check": true
+  },
+  "first_failures_preserved_bounded": [
+    "Rust PATH omitted actual system sha256sum; failed2 panel unit methods then exact retained whole panel library passed237.",
+    "Shared watcher framework temporary path /var versus canonical /private/var failed4 subcases across2 entrypoints; complete watcher scopes then passed24+24.",
+    "Install/IP external recorder missed unittest runner callbacks;17 real initial executions have no valid per-method accounting and are not added to current effective totals.",
+    "NQ recorder preflight assumed39 instead of actual38, zero product tests executed in preflight.",
+    "Protected Git mode recorder compared0644 with100644; only external recorder repaired.",
+    "External compiled-handler linker lacked existing OpenSSL native search path; zero handler calls before correction."
+  ],
+  "proof_identities": {
+    "rust": {
+      "sha256": "27e4617840a935ca5d529e78a0aa87ec113523c639db6b7604063bbb2b1847dd",
+      "kind": "actual local result receipt"
+    },
+    "web": {
+      "sha256": "e8f24b915b26b4dd458c3bd67a69909fd0a620193931ccaa5ee756d5687bdacd",
+      "kind": "actual local result receipt"
+    },
+    "embedded_handler": {
+      "sha256": "8d521d103ecddd338c7bb3c5097124c0d2726e90e8f7086d421cd928b96840c5",
+      "kind": "actual local result receipt"
+    },
+    "python_install_ip": {
+      "sha256": "100e0a54c890ed00c82d20a5b73f7ae71585600687eb3eb2364c4fd28b2e5bbc",
+      "kind": "actual local result receipt"
+    },
+    "nodequality": {
+      "sha256": "b8d115266090931e46bd80d364147314cbc32e814e9d638bc475be2c4ce09235",
+      "kind": "actual local result receipt"
+    },
+    "protected_source_identities": {
+      "sha256": "aded9315b2f8a0b67d781816658d8e60c2854a7d2b328ede3cceac97c3ffebf0",
+      "kind": "actual local result receipt"
+    },
+    "static_syntax": {
+      "sha256": "90335ddb00ba2ef5abcc8dcac3b77a38527d0af73f29bbde06724c133c1604b5",
+      "kind": "actual local result receipt"
+    }
+  },
+  "protected": "48 migrations,4 source workflows,Cargo.lock,source locks/helpers and five exact historical source copies preserved",
+  "external_pending": "Linux/systemd and sustained Agent/proxy/native tool matrix, full rights and secondary transfers/host side effects, dual architecture native closure, historical official0.1/0.2 artifacts, current private media accounts, Windows PS/UAC/ACL, Reality public failure root cause remain unverified. No native full, SSH, formal signing, release, production deployment, cloud/DNS/billing or real notifications.",
+  "ci": "4 source workflows disabled_manually; not executed is not passing; dynamic Copilot left active separately",
+  "new_author_advance_pending": {
+    "head": "b16804fa32eea707d40b05e63724cb9c2c91544f",
+    "main": "f102a4f3544f94c0deb12120d4480fbd1f6d1652",
+    "status": "Review and normal integration of new63-file delta pending; this result does not certify new inputs."
+  },
+  "cleanup": "Owned current validation material remains until affected new integration verification finishes; final cleanup will retain bounded latest source/result summaries only. Historical author raw material previously deleted is not reconstructed."
+}

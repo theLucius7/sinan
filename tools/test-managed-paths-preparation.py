@@ -258,13 +258,21 @@ class ControllerContracts(unittest.TestCase):
                     "enroll", "--panel=" + origin, "--token=" + token], timeout=45)
                 service.assert_called_once_with(row, "start")
                 self.assertEqual(result, {"role": "A", "ordinary_enrollment_completed": True})
-            invalid_fields = (("run_id", "48a7f5bc-e160-43c2-9001-03e2f73f5493"), ("role", "B"),
+            invalid_fields = (("schema", 2), ("schema", True), ("run_id", "48a7f5bc-e160-43c2-9001-03e2f73f5493"), ("role", "B"),
                               ("token", None), ("token", True), ("token", 1), ("token", [token]),
                               ("token", {"value": token}), ("token", ""), ("token", "x" * 513), ("token", "TEST_ONLY\x00private"),
                               ("token", "TEST_ONLY\nprivate"))
             for field, value in invalid_fields:
                 with self.subTest(field=field, value_type=type(value).__name__):
                     path.write_text(json.dumps({**descriptor, field: value}))
+                    with patch.object(CONTROL, "role_capture") as command, patch.object(CONTROL, "service") as service:
+                        with self.assertRaisesRegex(ValueError, "enrollment_descriptor_identity_invalid"):
+                            CONTROL.dispatch(manifest, [], request)
+                        command.assert_not_called()
+                        service.assert_not_called()
+            for invalid_descriptor in (None, [], "TEST_ONLY_not_a_descriptor", 1):
+                with self.subTest(descriptor_type=type(invalid_descriptor).__name__):
+                    path.write_text(json.dumps(invalid_descriptor))
                     with patch.object(CONTROL, "role_capture") as command, patch.object(CONTROL, "service") as service:
                         with self.assertRaisesRegex(ValueError, "enrollment_descriptor_identity_invalid"):
                             CONTROL.dispatch(manifest, [], request)

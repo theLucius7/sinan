@@ -2,7 +2,11 @@
 
 对应 ADR 0051。整步源码冻结后已执行本地统一验收，失败修复只补验受影响范围。专用 Linux、实际制品、许可审查、签署和部署仍待验；本地通过不等于整体整改完成。
 
-## 已执行的本地验收
+2026-10-03 对 Issue #24 的本轮静态核对：check-place 继续作为一个 `aggregator` provider 展示七个数据库，正式 AbuseIPDB 带凭据接口与节点 Ipregistry／DB-IP 使用独立 provider；凭据缺失保持未知，不转回聚合入口冒充正式查询。独立 IPQuality 结果由共用诊断章节事务保存，provider、目标出口和任务 generation 分别绑定；媒体结果保持节点实际出口，不能用面板所在机器的访问代替。上述既有实现保留，本轮修复最小制品读取和实际库存绑定，见 [闭包补充记录](ipquality-minimal-profile.md)。修改期间未运行中间测试；最终十套 IP／工厂回归有效去重 275 项通过、2 个真实 loop 文件系统场景因未启用专用条件而跳过。首轮两个通用 profile fixture 错误已集中修复，仅补验受影响 rootfs-build 40 项，全部通过，原失败收据保留。输入身份和机器收据见 [本轮统一记录](all-open-issues-20261003.md)。正式账号、获准 builder、完整签名最小制品及节点联合负载仍待，不补写外部成功证据或关闭实际签收条件。
+
+最终统一验证后的静态闭包复核另发现源码派生的 media policy 回退文件名不匹配：独立 IP profile 固定的 browser／netflix 摘要对应已审核 native helper，而仓库无 `policies/` 时原回退读取普通 helper。现显式映射到 `native-browser-policy.py` 和 `native-netflix-policy.py`，固定摘要及拒绝篡改边界不变；发布对应源仍使用独立角色名称 `policies/browser-policy.py`、`policies/netflix-policy.py` 携带同一份精确正文。修复冻结后，独立 source-policy 使用实际固定四角色缓存执行 30 项，全部通过、0 跳过，覆盖完整派生、Bash 语法、上游 serializer，以及正确回退、普通正文误置和公开副本篡改回归；这些本地源证据不替代正式 provider 或节点运行证据。
+
+## 前次已执行的本地验收
 
 最终 672 份功能输入索引 SHA256 为 `8dae808a159fe3b4636c230316ac63c17cfc5680da7f19546110d2949822672e`，基于父提交 `7c455bcd08e4f1254430e17bde69a767b32758be`。索引覆盖源码、迁移、构建工具、测试和 AGENTS；文档及 19 个生成 dist 文件另记。脱敏方法计数、原始收据摘要、条件忽略和 dist 摘要见 [本地验收记录](node-ipquality-local.json)。失败记录原样保留，不算成功。
 

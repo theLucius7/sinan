@@ -1,5 +1,7 @@
 # 验收记录索引
 
+- [2026-10-03 全部开放 issues 集成交付](all-open-issues-20261003.md)
+
 - [PR155 节点目录、来源与外部授权整合：本聊天本地证据](pr155-root-integration-20261003.md)
 
 [文档导航](../README.md) · [执行进度](../../PROGRESS.md) · [整改顺序与当前门禁](ordered-remediation.md)

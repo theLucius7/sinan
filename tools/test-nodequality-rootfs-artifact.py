@@ -73,6 +73,10 @@ class DerivationTests(unittest.TestCase):
         cls.runner = artifact.offline_runner(cls.legacy)
 
     def test_exact_canonical_sources_and_full_licenses_are_retained(self):
+        self.assertEqual(artifact.embedded(self.legacy, "SINAN_NODEQUALITY_REPORT_HELPER"),
+                         artifact.history.source("report.py"))
+        self.assertEqual(artifact.embedded(self.runner, "SINAN_NODEQUALITY_ROOTFS_HELPER"),
+                         artifact.history.source("rootfs.py"))
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["PINNED_CHAIN"]), self.bundle)
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["NODEQUALITY_LICENSE"]),
                          artifact.embedded(self.legacy, artifact.MARKERS["NODEQUALITY_LICENSE"]))
@@ -105,6 +109,7 @@ class DerivationTests(unittest.TestCase):
 
     def test_changed_legacy_wrapper_entry_bundle_and_license_cannot_be_derived(self):
         changes = [self.legacy + b"\nprintf changed\n",
+                   self.legacy.replace(b"-r19\n", b"-r22\n", 1),
                    self.legacy.replace(b"umask 077", b"umask 022", 1),
                    self.legacy.replace(artifact.LOAD_ROOTFS, artifact.LOAD_ROOTFS + b"# changed\n", 1)]
         bundle = json.loads(self.bundle)

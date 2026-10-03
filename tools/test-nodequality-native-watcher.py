@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Real watcher ownership regressions; no benchmark or hardware test is run."""
+import base64
 import contextlib
 import fcntl
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -13,8 +16,10 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import threading
 import time
 import unittest
+import zipfile
 from unittest import mock
 
 sys.dont_write_bytecode = True
@@ -468,6 +473,27 @@ class WatcherLifecycle(unittest.TestCase):
             self.assert_watcher_exits(row)
             self.assertEqual((workspace / "section-header_info.json").read_bytes(), previous)
 
+    def test_fifo_source_cannot_keep_an_orphan_alive_or_replace_saved_chapters(self):
+        for filename in ("header_info.log", "upload.base64"):
+            with self.subTest(filename=filename):
+                workspace, results = self.workspace("fifo-" + filename.replace(".", "-"))
+                row = self.start_owner(workspace)
+                previous = (workspace / "section-header_info.json").read_bytes()
+                path = workspace / filename if filename == "upload.base64" else results / filename
+                path.unlink(missing_ok=True)
+                os.mkfifo(path, 0o600)
+                # No writer opens this FIFO. A path-based blocking open would
+                # remain stuck after the direct owner is killed.
+                end = time.monotonic() + 1.3
+                while time.monotonic() < end:
+                    self.bounded_logs()
+                    self.assertTrue(watcher_live(row), self.diagnostics())
+                    time.sleep(0.03)
+                row["process"].kill()
+                row["process"].wait(timeout=2)
+                self.assert_watcher_exits(row)
+                self.assertEqual((workspace / "section-header_info.json").read_bytes(), previous)
+
     def test_runtime_disappearance_or_inode_replacement_exits_with_owner_alive(self):
         for replacement in (False, True):
             with self.subTest(replacement=replacement):
@@ -518,10 +544,421 @@ class WatcherLifecycle(unittest.TestCase):
         self.assertEqual((workspace / "section-hardware_quality.json").read_bytes(), historical)
 
 
+class PublicationDirectoryContracts(unittest.TestCase):
+    def test_replacement_before_source_open_read_or_atomic_rename_cannot_receive_old_publication(self):
+        for stage, invocation in (("directory_open", "watcher"), ("source_open", "watcher"),
+                                  ("source_read", "watcher"), ("atomic_rename", "watcher"),
+                                  ("directory_open", "snapshot"), ("source_open", "snapshot"),
+                                  ("source_read", "snapshot"), ("atomic_rename", "snapshot")):
+            with self.subTest(stage=stage, invocation=invocation), tempfile.TemporaryDirectory(prefix="sinan-watcher-publication-") as name:
+                root = Path(name)
+                workspace = root / "workspace"
+                workspace.mkdir(mode=0o700)
+                (workspace / ".runner").mkdir(mode=0o700)
+                result = workspace / ".nodequality-owned" / "BenchOs" / "result"
+                result.mkdir(parents=True)
+                (result / "header_info.log").write_text("TEST_ONLY original source read before replacement")
+                previous = {"name": "header_info", "text": "TEST_ONLY previous original preview",
+                            "complete": False, "revision": 4, "collected_at": 1}
+                private_json(workspace / "section-header_info.json", previous)
+                original_identity = directory_identity(workspace)
+                original_result_identity = directory_identity(result)
+                displaced = root / "original-retained"
+                reached, released = threading.Event(), threading.Event()
+                errors, observations = [], []
+                replacement = {"name": "header_info", "text": "TEST_ONLY new owner chapter",
+                               "complete": False, "revision": 73, "collected_at": 2}
+                replacement_bytes = json.dumps(replacement).encode()
+
+                def replace_workspace():
+                    try:
+                        if not reached.wait(timeout=3):
+                            raise RuntimeError("publisher did not reach the source/publication barrier")
+                        workspace.rename(displaced)
+                        workspace.mkdir(mode=0o700)
+                        (workspace / ".runner").mkdir(mode=0o700)
+                        (workspace / "section-header_info.json").write_bytes(replacement_bytes)
+                        (workspace / ".sections.lock").write_bytes(b"TEST_ONLY replacement lock")
+                    except BaseException as error:
+                        errors.append(error)
+                    finally:
+                        released.set()
+
+                spec = importlib.util.spec_from_file_location("publication_report", REPORT)
+                report = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(report)
+                publish, replace, open_file = report.publish_sections, report.os.replace, report.os.open
+
+                def pause(directory_fd):
+                    metadata = os.fstat(directory_fd)
+                    observations.append((metadata.st_dev, metadata.st_ino))
+                    reached.set()
+                    if not released.wait(timeout=3):
+                        raise RuntimeError("replacement fixture did not release publication")
+
+                def publish_after_barrier(*args, **kwargs):
+                    pause(kwargs["publication_fd"])
+                    return publish(*args, **kwargs)
+
+                def rename_after_barrier(*args, **kwargs):
+                    if args[1] == "section-header_info.json":
+                        self.assertEqual(kwargs["src_dir_fd"], kwargs["dst_dir_fd"])
+                        pause(kwargs["dst_dir_fd"])
+                    return replace(*args, **kwargs)
+
+                def open_after_barrier(name, flags, *args, **kwargs):
+                    target = ".nodequality-owned" if stage == "directory_open" else "header_info.log"
+                    if name == target and kwargs.get("dir_fd") is not None:
+                        self.assertTrue(flags & os.O_NOFOLLOW)
+                        if stage == "source_open":
+                            self.assertTrue(flags & os.O_NONBLOCK)
+                        pause(kwargs["dir_fd"])
+                    return open_file(name, flags, *args, **kwargs)
+
+                sleeps = []
+
+                def bounded_next_iteration(_seconds):
+                    sleeps.append(True)
+                    if len(sleeps) > 1 or errors:
+                        raise AssertionError("watcher followed replacement or fixture failed")
+
+                mutation = threading.Thread(target=replace_workspace)
+                mutation.start()
+                try:
+                    if stage in ("directory_open", "source_open"):
+                        publication_patch = mock.patch.object(report.os, "open", side_effect=open_after_barrier)
+                    elif stage == "source_read":
+                        publication_patch = mock.patch.object(report, "publish_sections", side_effect=publish_after_barrier)
+                    else:
+                        publication_patch = mock.patch.object(report.os, "replace", side_effect=rename_after_barrier)
+                    with mock.patch.object(report.time, "sleep", side_effect=bounded_next_iteration), \
+                            publication_patch:
+                        if invocation == "watcher":
+                            report.watch_sections(workspace, os.getppid())
+                        else:
+                            report.snapshot(workspace, blocking=False)
+                finally:
+                    released.set()
+                    mutation.join(timeout=4)
+                self.assertFalse(mutation.is_alive())
+                self.assertEqual(errors, [])
+                expected_identity = original_result_identity if stage == "source_open" else original_identity
+                self.assertEqual(observations, [expected_identity])
+                self.assertEqual((workspace / "section-header_info.json").read_bytes(), replacement_bytes)
+                self.assertEqual((workspace / ".sections.lock").read_bytes(), b"TEST_ONLY replacement lock")
+                self.assertEqual(set(path.name for path in workspace.iterdir()),
+                                 {".runner", ".sections.lock", "section-header_info.json"})
+                old = json.loads((displaced / "section-header_info.json").read_bytes())
+                aborted = invocation == "watcher" and stage != "atomic_rename"
+                self.assertEqual(old["text"], previous["text"] if aborted else "TEST_ONLY original source read before replacement")
+                self.assertEqual(old["revision"], 4 if aborted else 5)
+                self.assertEqual(stat.S_IMODE((displaced / "section-header_info.json").stat().st_mode), 0o600)
+                self.assertEqual(list(displaced.glob(".section-header_info.json.*")), [])
+
+
+class SourceReadContracts(unittest.TestCase):
+    def report(self):
+        spec = importlib.util.spec_from_file_location("source_read_report", REPORT)
+        report = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(report)
+        return report
+
+    def test_regular_to_fifo_swap_before_open_is_rejected_without_reading_or_late_publication(self):
+        for filename, invocation in (("header_info.log", "snapshot"), ("upload.base64", "snapshot"),
+                                     ("header_info.log", "watcher"), ("upload.base64", "watcher")):
+            with self.subTest(filename=filename, invocation=invocation), \
+                    tempfile.TemporaryDirectory(prefix="sinan-watcher-source-swap-") as temporary:
+                workspace = Path(temporary) / "workspace"
+                workspace.mkdir(mode=0o700)
+                (workspace / ".runner").mkdir(mode=0o700)
+                result = workspace / ".nodequality-owned" / "BenchOs" / "result"
+                result.mkdir(parents=True)
+                path = workspace / filename if filename == "upload.base64" else result / filename
+                path.write_bytes(b"TEST_ONLY regular source before the FIFO swap")
+                previous = {"name": "header_info", "text": "TEST_ONLY saved original chapter",
+                            "complete": True, "revision": 7, "collected_at": 1}
+                private_json(workspace / "section-header_info.json", previous)
+                saved = (workspace / "section-header_info.json").read_bytes()
+                report = self.report()
+                open_file = report.os.open
+                seen = []
+                owner = os.getppid()
+                parent = [owner]
+
+                def swap_before_open(name, flags, *args, **kwargs):
+                    if name == filename and kwargs.get("dir_fd") is not None and not seen:
+                        seen.append(flags)
+                        path.unlink()
+                        os.mkfifo(path, 0o600)
+                        self.assertTrue(flags & os.O_NOFOLLOW)
+                        self.assertTrue(flags & os.O_NONBLOCK)
+                    return open_file(name, flags, *args, **kwargs)
+
+                def lose_owner(_seconds):
+                    parent[0] = 1
+
+                with mock.patch.object(report.os, "open", side_effect=swap_before_open), \
+                        mock.patch.object(report.os, "getppid", side_effect=lambda: parent[0]), \
+                        mock.patch.object(report.time, "sleep", side_effect=lose_owner):
+                    if invocation == "watcher":
+                        report.watch_sections(workspace, owner)
+                    else:
+                        report.snapshot(workspace, blocking=False)
+                self.assertEqual(len(seen), 1)
+                self.assertEqual((workspace / "section-header_info.json").read_bytes(), saved)
+                self.assertEqual(list(workspace.glob(".section-header_info.json.*")), [])
+
+    def test_read_source_rejects_links_size_writable_mode_and_nonregular_files(self):
+        report = self.report()
+        with tempfile.TemporaryDirectory(prefix="sinan-watcher-source-contract-") as temporary:
+            workspace = Path(temporary)
+            path = workspace / "source"
+            descriptor = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                self.assertIsNone(report.read_source_at(descriptor, "missing", 16, lambda: None))
+                path.write_bytes(b"TEST_ONLY")
+                path.chmod(0o600)
+                self.assertEqual(report.read_source_at(descriptor, "source", 16, lambda: None), b"TEST_ONLY")
+                path.chmod(0o666)
+                with self.assertRaisesRegex(ValueError, "bounded owned ordinary"):
+                    report.read_source_at(descriptor, "source", 16, lambda: None)
+                path.chmod(0o600)
+                with self.assertRaisesRegex(ValueError, "bounded owned ordinary"):
+                    report.read_source_at(descriptor, "source", 1, lambda: None)
+                path.unlink()
+                path.symlink_to(workspace / "missing")
+                with self.assertRaises(OSError):
+                    report.read_source_at(descriptor, "source", 16, lambda: None)
+                path.unlink()
+                os.mkfifo(path, 0o600)
+                with self.assertRaisesRegex(ValueError, "bounded owned ordinary"):
+                    report.read_source_at(descriptor, "source", 16, lambda: None)
+                with self.assertRaisesRegex(ValueError, "name is invalid"):
+                    report.read_source_at(descriptor, "../source", 16, lambda: None)
+            finally:
+                os.close(descriptor)
+
+    def test_non_directory_components_never_harvest_logs_from_their_ancestors(self):
+        for component in (".nodequality-owned", "BenchOs", "result"):
+            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="sinan-watcher-nondirectory-") as temporary:
+                workspace = Path(temporary)
+                parent = workspace
+                for name in (".nodequality-owned", "BenchOs", "result"):
+                    if name == component:
+                        (parent / name).write_text("TEST_ONLY ordinary file instead of directory")
+                        (parent / "header_info.log").write_text("TEST_ONLY unrelated ancestor log")
+                        break
+                    parent = parent / name
+                    parent.mkdir(mode=0o700)
+                self.report().snapshot(workspace, blocking=False)
+                self.assertFalse((workspace / "section-header_info.json").exists())
+                self.assertFalse((workspace / ".sections.lock").exists())
+
+    def test_nested_result_directory_replacement_before_open_rejects_new_inode(self):
+        for component in (".nodequality-owned", "BenchOs", "result"):
+            with self.subTest(component=component), tempfile.TemporaryDirectory(prefix="sinan-watcher-nested-swap-") as temporary:
+                workspace = Path(temporary)
+                result = workspace / ".nodequality-owned" / "BenchOs" / "result"
+                result.mkdir(parents=True)
+                (result / "header_info.log").write_text("TEST_ONLY original nested source")
+                report = self.report()
+                open_file = report.os.open
+                selected = next(path for path in (result, result.parent, result.parent.parent) if path.name == component)
+                changed = []
+
+                def replace_before_open(name, flags, *args, **kwargs):
+                    if name == component and kwargs.get("dir_fd") is not None and not changed:
+                        changed.append(True)
+                        selected.rename(selected.with_name(component + "-retained"))
+                        selected.mkdir(mode=0o700)
+                        replacement = selected
+                        remaining = {".nodequality-owned": ("BenchOs", "result"), "BenchOs": ("result",), "result": ()}[component]
+                        for child in remaining:
+                            replacement = replacement / child
+                            replacement.mkdir(mode=0o700)
+                        (replacement / "header_info.log").write_text("TEST_ONLY replacement source must not publish")
+                    return open_file(name, flags, *args, **kwargs)
+
+                with mock.patch.object(report.os, "open", side_effect=replace_before_open):
+                    with self.assertRaisesRegex(ValueError, "identity changed during open"):
+                        report.snapshot(workspace, blocking=False)
+                self.assertEqual(changed, [True])
+                self.assertFalse((workspace / "section-header_info.json").exists())
+                self.assertFalse((workspace / ".sections.lock").exists())
+
+    def test_each_read_chunk_checks_owner_and_deadline_before_more_bytes(self):
+        report = self.report()
+        with tempfile.TemporaryDirectory(prefix="sinan-watcher-chunk-cancel-") as temporary:
+            workspace = Path(temporary)
+            (workspace / "source").write_bytes(b"x" * (128 * 1024))
+            descriptor = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            checks = []
+
+            def cancel_second_chunk():
+                checks.append(True)
+                if len(checks) == 3:
+                    raise ValueError("TEST_ONLY owner changed before second bounded chunk")
+
+            try:
+                with self.assertRaisesRegex(ValueError, "before second bounded chunk"):
+                    report.read_source_at(descriptor, "source", 128 * 1024, cancel_second_chunk)
+                self.assertEqual(len(checks), 3)
+            finally:
+                os.close(descriptor)
+
+    def test_cancellation_and_deadline_during_source_reads_drop_unpublished_bytes_and_close_fds(self):
+        for interruption in ("owner_loss", "deadline"):
+            with self.subTest(interruption=interruption), \
+                    tempfile.TemporaryDirectory(prefix="sinan-watcher-read-cancel-") as temporary:
+                workspace = Path(temporary)
+                result = workspace / ".nodequality-owned" / "BenchOs" / "result"
+                result.mkdir(parents=True)
+                (result / "header_info.log").write_bytes(b"x" * (64 * 1024))
+                (result / "hardware_quality.json").write_bytes(b"x" * (128 * 1024))
+                previous = {"name": "header_info", "text": "TEST_ONLY previously saved chapter",
+                            "complete": True, "revision": 8, "collected_at": 1}
+                private_json(workspace / "section-header_info.json", previous)
+                saved = (workspace / "section-header_info.json").read_bytes()
+                report = self.report()
+                source_read, open_file = report.read_source_at, report.os.open
+                cancelled = [False]
+                clock = [0.0]
+                descriptors = []
+
+                def record_open(*args, **kwargs):
+                    descriptor = open_file(*args, **kwargs)
+                    descriptors.append(descriptor)
+                    return descriptor
+
+                def interrupt_after_read(*args, **kwargs):
+                    content = source_read(*args, **kwargs)
+                    if args[1] == "header_info.log":
+                        if interruption == "owner_loss":
+                            cancelled[0] = True
+                        else:
+                            clock[0] = report.SNAPSHOT_SECONDS + 1
+                    return content
+
+                with mock.patch.object(report.os, "open", side_effect=record_open), \
+                        mock.patch.object(report, "read_source_at", side_effect=interrupt_after_read), \
+                        mock.patch.object(report.time, "monotonic", side_effect=lambda: clock[0]):
+                    with self.assertRaisesRegex(ValueError, "stopped or exceeded its deadline"):
+                        report.snapshot(workspace, blocking=False,
+                                        cancelled=(lambda: cancelled[0]) if interruption == "owner_loss" else None)
+                self.assertEqual((workspace / "section-header_info.json").read_bytes(), saved)
+                self.assertFalse((workspace / ".sections.lock").exists())
+                self.assertTrue(descriptors)
+                for descriptor in descriptors:
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
+
+
+class CollectorDirectoryContracts(unittest.TestCase):
+    def report(self):
+        spec = importlib.util.spec_from_file_location("collector_directory_report", REPORT)
+        report = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(report)
+        return report
+
+    def archive(self, report):
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            for name, _ in report.SECTIONS:
+                archive.writestr(name + ".log", "TEST_ONLY complete " + name)
+                if name != "header_info":
+                    archive.writestr(name + ".json", '{"TEST_ONLY": true}')
+        return base64.b64encode(output.getvalue())
+
+    def test_capture_response_stream_and_render_keep_original_directory_after_input_read(self):
+        for operation in ("capture", "response", "stream", "render"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory(prefix="sinan-collector-directory-") as temporary:
+                workspace = Path(temporary) / "workspace"
+                workspace.mkdir(mode=0o700)
+                displaced = workspace.with_name("original-retained")
+                report = self.report()
+                encoded = self.archive(report)
+                (workspace / "upload.base64").write_bytes(encoded)
+                replacement_bytes = b"TEST_ONLY unrelated new owner"
+                changed = []
+
+                def replace_workspace():
+                    if changed:
+                        return
+                    changed.append(True)
+                    workspace.rename(displaced)
+                    workspace.mkdir(mode=0o700)
+                    for name in ("upload.base64", "result.txt", "report.zip", "upload-response.txt", "upload-status.txt", "log.txt"):
+                        (workspace / name).write_bytes(replacement_bytes)
+
+                class Input(io.BytesIO):
+                    def read(self, *args):
+                        value = super().read(*args)
+                        replace_workspace()
+                        return value
+
+                    def read1(self, *args):
+                        value = super().read1(*args)
+                        replace_workspace()
+                        return value
+
+                source = encoded if operation == "capture" else b"TEST_ONLY streamed bytes\nSINAN_RESPONSE_STATUS:200"
+                stdin = mock.Mock(buffer=Input(source))
+                stdout = mock.Mock(buffer=io.BytesIO())
+                archive_files = report.archive_files
+
+                def replace_after_archive(*args, **kwargs):
+                    value = archive_files(*args, **kwargs)
+                    replace_workspace()
+                    return value
+
+                with mock.patch.object(report.sys, "stdin", stdin), mock.patch.object(report.sys, "stdout", stdout):
+                    if operation == "capture":
+                        report.capture(workspace)
+                        self.assertEqual((displaced / "upload.base64").read_bytes(), encoded)
+                        self.assertTrue((displaced / "section-header_info.json").exists())
+                    elif operation == "response":
+                        report.capture_response(workspace)
+                        self.assertEqual((displaced / "upload-status.txt").read_bytes(), b"200")
+                    elif operation == "stream":
+                        report.stream_log(workspace / "log.txt")
+                        self.assertEqual((displaced / "log.txt").read_bytes(), source)
+                    else:
+                        with mock.patch.object(report, "archive_files", side_effect=replace_after_archive):
+                            report.render(workspace)
+                        self.assertTrue((displaced / "result.txt").exists())
+                        self.assertFalse((displaced / "upload.base64").exists())
+                self.assertEqual(changed, [True])
+                self.assertEqual(set(path.name for path in workspace.iterdir()),
+                                 {"upload.base64", "result.txt", "report.zip", "upload-response.txt", "upload-status.txt", "log.txt"})
+                for path in workspace.iterdir():
+                    self.assertEqual(path.read_bytes(), replacement_bytes)
+
+    def test_serialized_chapter_lock_wait_is_bounded_and_keeps_saved_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="sinan-collector-lock-deadline-") as temporary:
+            workspace = Path(temporary)
+            report = self.report()
+            saved = {"name": "header_info", "text": "TEST_ONLY complete saved chapter",
+                     "complete": True, "revision": 9, "collected_at": 1}
+            private_json(workspace / "section-header_info.json", saved)
+            previous = (workspace / "section-header_info.json").read_bytes()
+            clock = [0.0]
+
+            def advance(_seconds):
+                clock[0] = report.SNAPSHOT_SECONDS + 1
+
+            with mock.patch.object(report.fcntl, "flock", side_effect=BlockingIOError("TEST_ONLY busy")), \
+                    mock.patch.object(report.time, "monotonic", side_effect=lambda: clock[0]), \
+                    mock.patch.object(report.time, "sleep", side_effect=advance):
+                with self.assertRaises(BlockingIOError):
+                    report.save_section(workspace, "header_info", "TEST_ONLY pending replacement", True)
+            self.assertEqual((workspace / "section-header_info.json").read_bytes(), previous)
+            self.assertEqual(list(workspace.glob(".section-header_info.json.*")), [])
+
+
 class ReadinessContracts(unittest.TestCase):
     def test_framework_interpreter_image_comes_only_from_trusted_local_metadata(self):
         with tempfile.TemporaryDirectory(prefix='sinan-watcher-interpreter-contract-') as name:
-            version = Path(name) / 'Python.framework' / 'Versions' / '3.14'
+            version = Path(name).resolve() / 'Python.framework' / 'Versions' / '3.14'
             launcher = version / 'bin' / 'python3.14'
             image = version / 'Resources' / 'Python.app' / 'Contents' / 'MacOS' / 'Python'
             for path in (launcher, image):
