@@ -159,6 +159,7 @@ pub async fn accept_receipt(state: &AppState, receipt: RetirementReceipt) -> Api
         )
         .map_err(|_| ApiError::Unauthorized)?;
     delete_record(&mut tx, receipt.server_id).await?;
+    sqlx::query("UPDATE fleet_terminal_sessions SET status='closed',close_requested=TRUE WHERE server_id=$1 AND status IN ('queued','running')").bind(receipt.server_id).execute(&mut *tx).await?;
     sqlx::query("UPDATE server_retirements SET status='confirmed',error=NULL,completed_at=COALESCE(completed_at,$2) WHERE server_id=$1")
         .bind(receipt.server_id).bind(now_timestamp()).execute(&mut *tx).await?;
     tx.commit().await?;

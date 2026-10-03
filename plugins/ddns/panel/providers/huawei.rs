@@ -29,6 +29,24 @@ impl Huawei {
         query: &[(&str, String)],
         body: Option<Value>,
     ) -> Result<Value, Failure> {
+        self.call_credentials(
+            (&rule.access_key_id, &rule.access_key_secret),
+            method,
+            path,
+            query,
+            body,
+        )
+        .await
+    }
+    pub(super) async fn call_credentials(
+        &self,
+        credentials: (&str, &str),
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<Value>,
+    ) -> Result<Value, Failure> {
+        let (key, secret) = credentials;
         let mut url = self
             .endpoint
             .join(path)
@@ -39,14 +57,7 @@ impl Huawei {
         }
         let date = signing::iso_time(sinan_protocol::now_timestamp()).replace(['-', ':'], "");
         let body = body.map(|v| v.to_string()).unwrap_or_default();
-        let auth = signing::huawei(
-            &rule.access_key_id,
-            &rule.access_key_secret,
-            method.as_str(),
-            &url,
-            &body,
-            &date,
-        );
+        let auth = signing::huawei(key, secret, method.as_str(), &url, &body, &date);
         let response = transport::json(
             self.client
                 .request(method, url)
@@ -91,16 +102,7 @@ fn record(value: &Value, zone: &str) -> Result<Record, Failure> {
 }
 
 impl Huawei {
-    pub(super) async fn reconcile_guarded<G, Check, Checked>(
-        &self,
-        rule: &Rule,
-        ip: IpAddr,
-        mut check: Check,
-    ) -> Result<Outcome, Failure>
-    where
-        Check: FnMut() -> Checked,
-        Checked: Future<Output = Result<G, Failure>>,
-    {
+    async fn read_records(&self, rule: &Rule) -> Result<(Vec<Record>, String), Failure> {
         use reqwest::Method;
         let spec = &rule.config;
         let zone_path = format!("v2/zones/{}", spec.zone_id);
@@ -158,7 +160,32 @@ impl Huawei {
             .iter()
             .map(|v| record(v, &spec.zone_id))
             .collect::<Result<Vec<_>, _>>()?;
-        let existing = choose(rule, &records, &zone_name)?;
+        Ok((records, zone_name))
+    }
+
+    pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
+        let (records, zone) = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &zone)?;
+        Ok(existing.map(Record::snapshot))
+    }
+
+    pub(super) async fn reconcile_expected_guarded<G, Check, Checked>(
+        &self,
+        rule: &Rule,
+        ip: IpAddr,
+        expected: Option<&Snapshot>,
+        mut check: Check,
+    ) -> Result<Outcome, Failure>
+    where
+        Check: FnMut() -> Checked,
+        Checked: Future<Output = Result<G, Failure>>,
+    {
+        use reqwest::Method;
+        let spec = &rule.config;
+        let (records, zone) = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &zone)?;
+        let current = existing.map(Record::snapshot);
+        expected_matches(current.as_ref(), expected)?;
         if let Some(record) = existing.filter(|r| same(r, rule, ip)) {
             let _guard = check().await?;
             return Ok(Outcome {
@@ -166,8 +193,11 @@ impl Huawei {
                 status: "unchanged",
             });
         }
+        let path = format!("v2/zones/{}/recordsets", spec.zone_id);
         let mut body = json!({"name":format!("{}.",spec.record_name),"type":spec.record_type,"records":[ip.to_string()],"ttl":spec.ttl});
         let (method, path) = if let Some(record) = existing {
+            // Omit unrelated metadata: a read-time description must not overwrite
+            // an administrator's later change while DDNS updates the address.
             (Method::PUT, format!("{path}/{}", record.id))
         } else {
             body["description"] = format!("sinan-ddns:{}", rule.id).into();

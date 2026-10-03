@@ -17,6 +17,8 @@ struct Server {
     name: String,
     online: bool,
     enabled: bool,
+    interface_names: Vec<String>,
+    public_discovery_available: bool,
 }
 
 pub(super) fn routes() -> Router<AppState> {
@@ -28,8 +30,16 @@ pub(super) fn routes() -> Router<AppState> {
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Server>>> {
     auth::require_admin(&state, &headers).await?;
-    Ok(Json(sqlx::query_as("SELECT s.id,s.name,COALESCE(s.last_seen>=$1-60,false) AS online,COALESCE(p.enabled,false) AS enabled FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='ddns' WHERE s.deleted_at IS NULL ORDER BY s.id")
-        .bind(sinan_protocol::now_timestamp()).fetch_all(&state.pool).await?))
+    crate::control_center::require_capability(&state, &headers, "dns:read").await?;
+    let actor = crate::control_center::authenticate(&state, &headers).await?;
+    let servers: Vec<Server> = sqlx::query_as("SELECT s.id,s.name,COALESCE(s.last_seen>=$1-60,false) AS online,COALESCE(p.enabled,false) AS enabled,ARRAY(SELECT jsonb_object_keys(CASE WHEN jsonb_typeof(s.static_info->'interface_addresses')='object' THEN s.static_info->'interface_addresses' ELSE '{}'::jsonb END)) AS interface_names,COALESCE(jsonb_typeof(s.static_info->'discovered_public_ips')='array',false) AS public_discovery_available FROM servers s LEFT JOIN server_plugins p ON p.server_id=s.id AND p.plugin='ddns' WHERE s.deleted_at IS NULL ORDER BY s.id")
+        .bind(sinan_protocol::now_timestamp()).fetch_all(&state.pool).await?;
+    Ok(Json(
+        servers
+            .into_iter()
+            .filter(|server| actor.allows_server(server.id))
+            .collect(),
+    ))
 }
 
 async fn enable(
@@ -38,6 +48,7 @@ async fn enable(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<serde_json::Value>> {
     auth::require_admin(&state, &headers).await?;
+    crate::control_center::require_server(&state, &headers, id, "dns:write").await?;
     set_enabled(&state.pool, id, true).await?;
     Ok(Json(serde_json::json!({"enabled":true})))
 }
@@ -48,6 +59,7 @@ async fn disable(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<serde_json::Value>> {
     auth::require_admin(&state, &headers).await?;
+    crate::control_center::require_server(&state, &headers, id, "dns:write").await?;
     set_enabled(&state.pool, id, false).await?;
     Ok(Json(serde_json::json!({"enabled":false})))
 }

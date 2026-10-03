@@ -13,6 +13,8 @@ pub enum ApiError {
     BadRequest(String),
     #[error("authentication required")]
     Unauthorized,
+    #[error("{0}")]
+    Forbidden(String),
     #[error("resource not found")]
     NotFound,
     #[error("{0}")]
@@ -48,6 +50,7 @@ impl IntoResponse for ApiError {
             ),
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message.clone()),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "请先登录或检查设备凭证".into()),
+            Self::Forbidden(message) => (StatusCode::FORBIDDEN, message.clone()),
             Self::NotFound => (StatusCode::NOT_FOUND, "资源不存在".into()),
             Self::Conflict(message) => (StatusCode::CONFLICT, message.clone()),
             _ => {

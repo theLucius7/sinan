@@ -67,10 +67,16 @@ impl Runtime {
             .lock()
             .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
         if let Some(records) = state.get_json::<Vec<(String, i64)>>("discovered_ips")? {
-            let discovered = records
-                .into_iter()
-                .filter(|(_, expires)| *expires > sinan_protocol::now_timestamp())
-                .filter_map(|(address, _)| address.parse::<std::net::IpAddr>().ok());
+            info.discovered_public_ips = crate::telemetry::normalized_addresses(
+                records
+                    .iter()
+                    .filter(|(_, expires)| *expires > sinan_protocol::now_timestamp())
+                    .filter_map(|(address, _)| address.parse().ok()),
+            );
+            let discovered = info
+                .discovered_public_ips
+                .iter()
+                .filter_map(|address| address.parse::<std::net::IpAddr>().ok());
             info.ip_addresses = crate::telemetry::normalized_addresses(
                 info.ip_addresses
                     .iter()
@@ -150,6 +156,7 @@ pub async fn run_with_diagnostics(
     let supports_validation = adapters
         .iter()
         .any(|adapter| adapter.supports_dependency_validation());
+    let fleet_descriptors = adapters.iter().map(|adapter| adapter.describe()).collect();
     let mut reconcilers = Vec::new();
     for adapter in adapters {
         let module = adapter.describe().module;
@@ -173,6 +180,7 @@ pub async fn run_with_diagnostics(
         reconcilers.push((module, reconciler));
     }
     let mut capabilities = modules.clone();
+    capabilities.extend(crate::fleet::capabilities(&config));
     let exact_runtime_supported = !reconcilers.is_empty() && services.supports_runtime_checkpoint();
     if exact_runtime_supported {
         capabilities.push(sinan_protocol::RUNTIME_CHECKPOINT_CAPABILITY.into());
@@ -234,6 +242,10 @@ pub async fn run_with_diagnostics(
     let cancellation = if !diagnostics.is_empty() && services.supports_confirmed_cancellation() {
         capabilities.push(sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into());
         capabilities.push(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into());
+        #[cfg(unix)]
+        if crate::system::diagnostic_cpu_ceiling_supported() {
+            capabilities.push(sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into());
+        }
         Some(Arc::new(
             diagnostics::cancellation::CancellationControl::new(
                 state.clone(),
@@ -278,6 +290,15 @@ pub async fn run_with_diagnostics(
         client_rx.clone(),
         retirement.clone(),
         agent_version,
+    ));
+    tasks.spawn(crate::fleet::run(
+        config.clone(),
+        state.clone(),
+        privileged.clone(),
+        services.clone(),
+        client_rx.clone(),
+        retirement.clone(),
+        fleet_descriptors,
     ));
     tasks.spawn(crate::tasks::run(
         identity.server_id,

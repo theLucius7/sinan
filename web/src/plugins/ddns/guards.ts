@@ -1,5 +1,5 @@
 import type { DdnsConfig, DdnsRule } from './types'
-export type DdnsServer = { id: number; name: string; online: boolean; enabled: boolean }
+export type DdnsServer = { id: number; name: string; online: boolean; enabled: boolean; interface_names?: string[]; public_discovery_available?: boolean }
 export type DdnsCurrent = () => { rules: DdnsRule[]; servers: DdnsServer[] } | undefined
 const stale = '规则或服务器正在刷新或刷新失败，请成功刷新后再提交；当前草稿已保留。'
 const changed = '规则或服务器已变化，请重新核对；当前草稿已保留。'

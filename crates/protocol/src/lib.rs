@@ -8,6 +8,7 @@ pub use runtime_validations::*;
 pub mod tasks;
 pub mod upgrade;
 pub use upgrade::{AgentRelease, release_version};
+pub mod fleet;
 pub mod telemetry;
 pub use tasks::*;
 pub use telemetry::{
@@ -254,6 +255,10 @@ pub struct StaticInfo {
     pub runtime_libc: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ip_addresses: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub interface_addresses: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discovered_public_ips: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

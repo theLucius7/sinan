@@ -38,7 +38,7 @@ function metric(server: Server, sort: DashboardSort, unavailable: boolean): numb
   const metrics = server.latest_metrics
   if (sort === 'cpu') return number(metrics.cpu_percent)
   if (sort === 'memory') return ratio(metrics.memory_used, server.static_info.memory_total)
-  const up = network(metrics, 'transmit_bytes_per_sec'), down = network(metrics, 'receive_bytes_per_sec')
+  const up = network(metrics, 'transmit_bytes_per_sec', server.asset_settings?.network_interface), down = network(metrics, 'receive_bytes_per_sec', server.asset_settings?.network_interface)
   return up === null || down === null ? null : up + down
 }
 

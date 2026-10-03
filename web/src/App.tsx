@@ -30,6 +30,11 @@ export default function App() {
       if (active) {
         setSession(access.authenticated)
         setPublicDashboard(access.public_dashboard)
+        if (access.authenticated && (window.location.hash === '' || window.location.hash === '#/dashboard')) {
+          void api<{ role: string; all_servers: boolean; capabilities: string[] }>('/api/control-center/me').then(actor => {
+            if (active && actor.role !== 'owner' && (!actor.all_servers || !actor.capabilities.includes('monitoring:read'))) window.location.hash = actor.capabilities.includes('servers:read') ? '/servers' : '/system/control-center'
+          }).catch(() => {})
+        }
       }
     }).catch(error => {
       if (active) {

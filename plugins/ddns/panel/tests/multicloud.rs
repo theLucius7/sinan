@@ -279,3 +279,35 @@ async fn submitted_dns_update_keeps_previous_confirmed_address_and_timestamp(poo
     assert_eq!(stored.status, "submitted");
     assert_eq!(stored.record_id.as_deref(), Some(RECORD));
 }
+
+#[tokio::test]
+async fn provider_inspections_are_read_only_and_expected_snapshots_protect_each_provider() {
+    for provider in [Provider::Aliyun, Provider::Tencent, Provider::Huawei] {
+        let mut rule = configured(provider);
+        rule.config.adopt_existing = true;
+        let responses = || match provider {
+            Provider::Aliyun => ali_read(vec![ali_record(public_ip(9))]),
+            Provider::Tencent => tencent_read(vec![tencent_record(public_ip(9), false)]),
+            Provider::Huawei => hw_read(vec![hw_record(&rule, "ACTIVE")]),
+            _ => unreachable!(),
+        };
+        let mock = Mock::start(responses()).await;
+        let mut snapshot = Providers::local(&mock.endpoint)
+            .inspect(&rule)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(snapshot.values, [public_ip(9).to_string()]);
+        assert_eq!(mock.requests().len(), 2);
+        mock.exhausted();
+        snapshot.ttl += 1;
+        let mock = Mock::start(responses()).await;
+        let error = Providers::local(&mock.endpoint)
+            .reconcile_expected_guarded(&rule, public_ip(1), Some(&snapshot), || async { Ok(()) })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "remote_changed");
+        assert_eq!(mock.requests().len(), 2);
+        mock.exhausted();
+    }
+}

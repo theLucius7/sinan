@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, types::Json};
 use uuid::Uuid;
 
-#[derive(Serialize, FromRow)]
+#[derive(Clone, Serialize, FromRow)]
 pub(super) struct Account {
     pub id: Uuid,
     pub name: String,
@@ -12,6 +12,7 @@ pub(super) struct Account {
     pub access_key_id: String,
     #[serde(skip)]
     pub access_key_secret: String,
+    pub credential_id: Option<Uuid>,
     pub enabled: bool,
     pub auto_enabled: bool,
     pub limit_gb: i64,
@@ -131,6 +132,10 @@ pub(super) fn identifier(value: &str, prefix: &str) -> bool {
 pub(super) fn message(code: &str) -> &'static str {
     match code {
         "authentication_failed" => "访问密钥无效或缺少权限",
+        "credential_unavailable" => "集中云凭据已停用、用途不符或解密密钥缺失，请在凭据中心核对",
+        "credential_invalid" => {
+            "集中云凭据字段或提供方不符，需要阿里云 access_key_id 与 access_key_secret"
+        }
         "capacity_unavailable" => "实例库存或抢占价格条件不足，保活冷却后再尝试",
         "insufficient_balance" => "账号余额不足或资源欠费，请前往阿里云核对",
         "resource_locked" => "实例已被云端锁定，暂不能启停",

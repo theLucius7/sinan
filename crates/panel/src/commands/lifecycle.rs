@@ -82,7 +82,9 @@ pub async fn claim(
     }
     let mut tx = state.pool.begin().await?;
     if command_server(&mut tx, server).await?.1 {
-        return Err(ApiError::Conflict("服务器正在退役，不能领取命令".into()));
+        return Err(ApiError::Conflict(
+            "服务器处于维护、退役或互斥运维操作中，暂不能领取命令".into(),
+        ));
     }
     let row = sqlx::query("SELECT * FROM remote_commands WHERE id=$1 AND server_id=$2 FOR UPDATE")
         .bind(id)

@@ -7,6 +7,7 @@ mod release_test_support;
 pub mod artifacts;
 pub mod config;
 pub mod fake;
+pub mod fleet;
 pub mod identity;
 mod panel_tls;
 pub mod reconcile;
@@ -20,6 +21,8 @@ pub mod system;
 #[cfg(windows)]
 #[path = "system/windows.rs"]
 pub mod system;
+pub mod system_forwarding;
+pub mod system_network;
 pub mod tasks;
 pub mod telemetry;
 pub mod transport;

@@ -129,6 +129,7 @@ impl Retirement {
 
     pub(crate) async fn prepare(&self) -> Result<()> {
         let _guard = self.gate.write().await;
+        self.services.retire_interactive_sessions().await?;
         let mut record = self.read()?.context("retirement has not been requested")?;
         if record.phase != Phase::Requested {
             return Ok(());

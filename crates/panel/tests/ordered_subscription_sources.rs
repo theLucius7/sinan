@@ -28,7 +28,7 @@ async fn call(
         .await?;
     ensure!(
         response.status() == expected,
-        "unexpected status for {path}: {}",
+        "unexpected status for {path}: {} (expected {expected})",
         response.status()
     );
     if expected == StatusCode::NO_CONTENT {
@@ -894,6 +894,24 @@ async fn url_secrets_write_only_auth_replacement_and_refresh_deduplicate_with_st
     )
     .await?;
     no_secrets(&rejected);
+    let maximum_content = "x".repeat(2 * 1024 * 1024);
+    let maximum = call(
+        &panel,
+        &cookie,
+        Method::POST,
+        "/ordered-subscription-sources",
+        Some(inline_request("Maximum inline body", &maximum_content)),
+        StatusCode::ACCEPTED,
+    )
+    .await?;
+    let stored_bytes: i32 = sqlx::query_scalar(
+        "SELECT octet_length(input_config->>'content') FROM singbox_ordered_subscription_sources WHERE id=$1",
+    )
+    .bind(source_id(&maximum)?)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(stored_bytes, 2 * 1024 * 1024);
+    no_secrets(&get(&panel, &cookie, source_id(&maximum)?, "").await?);
     let oversized = call(
         &panel,
         &cookie,

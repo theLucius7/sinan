@@ -83,11 +83,11 @@ export function useAction() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
-  const run = async <T,>(task: () => Promise<T>, success: (value: T) => void) => {
+  const run = async <T,>(task: () => Promise<T>, success?: (value: T) => void) => {
     if (locked.current) return
     locked.current = true
     setBusy(true); setError('')
-    try { const result = await task(); if (alive.current) success(result) }
+    try { const result = await task(); if (alive.current) success?.(result) }
     catch (error) { if (alive.current) setError(errorMessage(error)) }
     finally { locked.current = false; if (alive.current) setBusy(false) }
   }

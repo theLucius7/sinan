@@ -59,9 +59,12 @@ pub async fn manifest_module(
             let mut tx = state.pool.begin().await?;
             let path_deployment: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_path_deployment_dependencies WHERE server_id=$1 AND module='singbox' AND revision=$2)")
                 .bind(server_id).bind(revision).fetch_one(&mut *tx).await?;
+            let explicit_rollout:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision<$2 AND r.completed_at IS NULL)").bind(server_id).bind(revision).fetch_one(&mut *tx).await?;
             // Only immutable path deployments bind an artifact to this revision.
             // Ordinary nodes retain ABI selection as legacy device facts improve.
-            if path_deployment {
+            // Explicit fixed candidates bind ordinary node revisions as well.
+            // Their artifact must remain the exact previewed platform payload.
+            if path_deployment || explicit_rollout {
                 sqlx::query("INSERT INTO singbox_runtime_manifest_facts(server_id,module,revision,runtime_version,artifact_sha256,artifact) VALUES($1,'singbox',$2,'1.14.2',$3,$4) ON CONFLICT DO NOTHING").bind(server_id).bind(revision).bind(&module.artifact.sha256).bind(serde_json::to_value(&module.artifact).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
                 let same:bool=sqlx::query_scalar("SELECT artifact_sha256=$3 FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(revision).bind(&module.artifact.sha256).fetch_one(&mut *tx).await?;
                 if !same {
@@ -113,7 +116,22 @@ async fn prepare_manifest(
             "此配置含低于设备已确认恢复边界的路径代数，等待发布安全的较高代数".into(),
         ));
     }
-    let pinned:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT r.artifact FROM singbox_path_deployment_dependencies d JOIN singbox_chain_runtime_requirements r ON r.chain_id=d.chain_id AND r.generation=d.generation AND r.server_id=d.server_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2").bind(server_id).bind(config_rev).fetch_all(&state.pool).await?;
+    let mut pinned:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT r.artifact FROM singbox_path_deployment_dependencies d JOIN singbox_chain_runtime_requirements r ON r.chain_id=d.chain_id AND r.generation=d.generation AND r.server_id=d.server_id WHERE d.server_id=$1 AND d.module='singbox' AND d.revision=$2").bind(server_id).bind(config_rev).fetch_all(&state.pool).await?;
+    let recorded:Option<Value>=sqlx::query_scalar("SELECT artifact FROM singbox_runtime_manifest_facts WHERE server_id=$1 AND module='singbox' AND revision=$2").bind(server_id).bind(config_rev).fetch_optional(&state.pool).await?;
+    if let Some(recorded) = recorded {
+        let recorded_sha = recorded.get("sha256");
+        if pinned
+            .iter()
+            .any(|artifact| artifact.get("sha256") != recorded_sha)
+        {
+            return Err(ApiError::Conflict(
+                "当前配置的路径依赖与已记录运行时制品不一致，需要新的受控配置版本".into(),
+            ));
+        }
+        if pinned.is_empty() {
+            pinned.push(recorded);
+        }
+    }
     if pinned.len() > 1 {
         return Err(ApiError::Conflict(
             "此配置包含不一致的固定运行时制品，保留现有运行状态".into(),
@@ -123,6 +141,12 @@ async fn prepare_manifest(
         Some(artifact) => serde_json::from_value(artifact).map_err(anyhow::Error::from)?,
         None => runtime_artifact(state, info).await?,
     };
+    let selected:Option<String>=sqlx::query_scalar("SELECT m.artifact_sha256 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision<$2 AND r.completed_at IS NULL ORDER BY r.created_at DESC LIMIT 1").bind(server_id).bind(config_rev).fetch_optional(&state.pool).await?;
+    if selected.is_some_and(|expected| expected != artifact.sha256) {
+        return Err(ApiError::Conflict(
+            "当前配置的签名制品与显式发布候选不同；不会自动换成另一制品，请核对库存和平台".into(),
+        ));
+    }
     Ok(ModuleManifest {
         kernel_version: "1.14.2".into(),
         artifact,

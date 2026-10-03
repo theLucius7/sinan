@@ -12,6 +12,11 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .merge(system::routes())
+        .merge(crate::control_center::router())
+        .merge(crate::fleet::router())
+        .merge(crate::network_workbench::router())
+        .merge(crate::network_configuration::router())
+        .merge(crate::operations::router())
         .merge(crate::runtime_control::routes())
         .merge(servers::routes())
         .merge(diagnostics::routes())
@@ -21,5 +26,9 @@ pub fn router(state: AppState) -> Router {
         .merge(plugins::router())
         .fallback(frontend::serve)
         .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::control_center::guard::guard,
+        ))
         .with_state(state)
 }

@@ -11,6 +11,7 @@ fn panel_budgets_only_tighten_adapter_limits_and_preserve_a_rejected_service() {
     let budget = DiagnosticResourceBudget {
         memory_max: 64 * 1024 * 1024,
         tasks_max: 32,
+        cpu_max_percent: Some(20),
         cpu_weight: 5,
         io_weight: 5,
         oom_score_adjust: 750,
@@ -18,9 +19,14 @@ fn panel_budgets_only_tighten_adapter_limits_and_preserve_a_rejected_service() {
     super::super::budget::apply(&budget, &mut service).unwrap();
     assert_eq!(service.memory_max.get(), budget.memory_max);
     assert_eq!(service.tasks_max.get(), 32);
+    assert_eq!(service.cpu_max_percent.get(), 20);
     assert_eq!(service.oom_score_adjust.get(), 750);
     let saved = service.clone();
     for rejected in [
+        DiagnosticResourceBudget {
+            cpu_max_percent: Some(21),
+            ..budget.clone()
+        },
         DiagnosticResourceBudget {
             memory_max: 128 * 1024 * 1024,
             ..budget.clone()
@@ -68,6 +74,7 @@ fn invalid_panel_budget_is_rejected_before_an_artifact_is_prepared() {
     job.resource_budget = Some(DiagnosticResourceBudget {
         memory_max: u64::MAX,
         tasks_max: 32,
+        cpu_max_percent: None,
         cpu_weight: 10,
         io_weight: 10,
         oom_score_adjust: 500,

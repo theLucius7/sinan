@@ -26,14 +26,26 @@ pub struct ProxyUserView {
     pub name: String,
     pub subscription_token: String,
     pub subscription_url: String,
+    pub credentials_redacted: bool,
+    pub credential_access_reason: &'static str,
 }
 impl ProxyUserRow {
-    fn view(self, public_url: &str) -> ProxyUserView {
+    fn view(self, public_url: &str, reveal: bool) -> ProxyUserView {
         ProxyUserView {
             id: self.id,
             name: self.name,
-            subscription_url: format!("{public_url}/sub/{}", self.subscription_token),
-            subscription_token: self.subscription_token,
+            subscription_url: if reveal {
+                format!("{public_url}/sub/{}", self.subscription_token)
+            } else {
+                String::new()
+            },
+            subscription_token: if reveal {
+                self.subscription_token
+            } else {
+                String::new()
+            },
+            credentials_redacted: !reveal,
+            credential_access_reason: super::secret_access::REASON,
         }
     }
 }
@@ -49,15 +61,19 @@ pub async fn list(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<ProxyUserView>>> {
     require_admin(&state, &headers).await?;
+    let reveal = super::secret_access::may_reveal(&state, &headers).await?;
     let users = sqlx::query_as::<_, ProxyUserRow>(
         "SELECT id,name,subscription_token FROM users WHERE deleted_at IS NULL ORDER BY id",
     )
     .fetch_all(&state.pool)
     .await?;
+    if reveal {
+        super::secret_access::audit_read(&state,&headers,None,"security_subscription_addresses_read",serde_json::json!({"source":"user_list","user_ids":users.iter().map(|user|user.id).collect::<Vec<_>>(),"credential_values_recorded":false})).await?;
+    }
     Ok(Json(
         users
             .into_iter()
-            .map(|user| user.view(&state.config.public_url))
+            .map(|user| user.view(&state.config.public_url, reveal))
             .collect(),
     ))
 }
@@ -68,6 +84,7 @@ pub async fn get(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<ProxyUserView>> {
     require_admin(&state, &headers).await?;
+    let reveal = super::secret_access::may_reveal(&state, &headers).await?;
     let user = sqlx::query_as::<_, ProxyUserRow>(
         "SELECT id,name,subscription_token FROM users WHERE id=$1 AND deleted_at IS NULL",
     )
@@ -75,7 +92,17 @@ pub async fn get(
     .fetch_optional(&state.pool)
     .await?
     .ok_or(ApiError::NotFound)?;
-    Ok(Json(user.view(&state.config.public_url)))
+    if reveal {
+        super::secret_access::audit_read(
+            &state,
+            &headers,
+            Some(id),
+            "security_subscription_addresses_read",
+            serde_json::json!({"source":"user_detail","credential_values_recorded":false}),
+        )
+        .await?;
+    }
+    Ok(Json(user.view(&state.config.public_url, reveal)))
 }
 
 pub async fn create(
@@ -84,11 +111,22 @@ pub async fn create(
     Json(request): Json<ProxyUserRequest>,
 ) -> ApiResult<(StatusCode, Json<ProxyUserView>)> {
     require_admin(&state, &headers).await?;
+    let reveal = super::secret_access::may_reveal(&state, &headers).await?;
     let name = business::name(&request.name)?;
     let user = sqlx::query_as::<_, ProxyUserRow>("INSERT INTO users(name,subscription_token) VALUES($1,$2) RETURNING id,name,subscription_token").bind(name).bind(random_token()).fetch_one(&state.pool).await?;
+    if reveal {
+        super::secret_access::audit_read(
+            &state,
+            &headers,
+            Some(user.id),
+            "security_subscription_addresses_read",
+            serde_json::json!({"source":"user_create_response","credential_values_recorded":false}),
+        )
+        .await?;
+    }
     Ok((
         StatusCode::CREATED,
-        Json(user.view(&state.config.public_url)),
+        Json(user.view(&state.config.public_url, reveal)),
     ))
 }
 
@@ -99,6 +137,7 @@ pub async fn update(
     Json(request): Json<ProxyUserRequest>,
 ) -> ApiResult<Json<ProxyUserView>> {
     require_admin(&state, &headers).await?;
+    let reveal = super::secret_access::may_reveal(&state, &headers).await?;
     let name = business::name(&request.name)?;
     let mut transaction = state.pool.begin().await?;
     super::entitlements::lock(&mut transaction).await?;
@@ -113,7 +152,17 @@ pub async fn update(
     .await?;
     business::mark_dirty(&mut transaction, &servers).await?;
     transaction.commit().await?;
-    Ok(Json(user.view(&state.config.public_url)))
+    if reveal {
+        super::secret_access::audit_read(
+            &state,
+            &headers,
+            Some(id),
+            "security_subscription_addresses_read",
+            serde_json::json!({"source":"user_update_response","credential_values_recorded":false}),
+        )
+        .await?;
+    }
+    Ok(Json(user.view(&state.config.public_url, reveal)))
 }
 
 pub async fn reset_subscription(
@@ -121,16 +170,22 @@ pub async fn reset_subscription(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<ProxyUserView>> {
-    require_admin(&state, &headers).await?;
+    let administrator =
+        crate::control_center::require_capability(&state, &headers, "proxy:write").await?;
+    crate::control_center::require_recent_proof(&state, &headers).await?;
+    let mut tx = state.pool.begin().await?;
+    super::business::lock_user(&mut tx, id).await?;
     let user = sqlx::query_as::<_, ProxyUserRow>(
         "UPDATE users SET subscription_token=$2 WHERE id=$1 AND deleted_at IS NULL RETURNING id,name,subscription_token",
     )
     .bind(id)
     .bind(random_token())
-    .fetch_optional(&state.pool)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
-    Ok(Json(user.view(&state.config.public_url)))
+    super::operations_workflows::event(&mut tx, Some(administrator), Some(id), "security_subscription_reset", serde_json::json!({"node_credentials_rotated":false,"downloaded_credentials_revoked":false})).await?;
+    tx.commit().await?;
+    Ok(Json(user.view(&state.config.public_url, true)))
 }
 
 pub async fn remove(

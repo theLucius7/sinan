@@ -86,6 +86,14 @@ pub async fn pending(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    match crate::fleet::ensure_accepts_tasks_tx(&mut tx, server_id).await {
+        Ok(()) => {}
+        Err(ApiError::Conflict(_)) => {
+            tx.commit().await?;
+            return Ok(Json(Vec::new()));
+        }
+        Err(error) => return Err(error),
+    }
     service::reject_queued(&mut tx, server_id).await?;
     if !capabilities.as_array().is_some_and(|values| {
         values

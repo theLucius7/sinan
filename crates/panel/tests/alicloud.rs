@@ -19,7 +19,20 @@ async fn cloud_account_crud_never_returns_credentials_and_enforces_revisions_and
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
-    let account_body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET});
+    let mut account_body = json!({"name":"测试账号","site":"china","enabled":false,"auto_enabled":false,"limit_gb":100,"access_key_id":KEY,"access_key_secret":SECRET});
+    assert_eq!(
+        panel
+            .admin(
+                Method::POST,
+                "/api/plugins/alicloud/accounts",
+                &cookie,
+                Some(account_body.clone()),
+            )
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    account_body["legacy_credentials"] = true.into();
     let id: Value = panel
         .admin(
             Method::POST,

@@ -102,6 +102,10 @@ impl Service {
 
     pub(crate) fn check_origin(&self, headers: &HeaderMap) -> ApiResult<()> {
         self.engine()?;
+        self.check_session_origin(headers)
+    }
+
+    pub(crate) fn check_session_origin(&self, headers: &HeaderMap) -> ApiResult<()> {
         if headers.get_all(header::ORIGIN).iter().count() != 1
             || headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) != Some(&self.origin)
         {
@@ -131,6 +135,15 @@ pub(crate) async fn permit(
     peer: SocketAddr,
 ) -> ApiResult<tokio::sync::OwnedSemaphorePermit> {
     state.passkeys.check_origin(headers)?;
+    password_permit(state, headers, peer).await
+}
+
+pub(crate) async fn password_permit(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: SocketAddr,
+) -> ApiResult<tokio::sync::OwnedSemaphorePermit> {
+    state.passkeys.check_session_origin(headers)?;
     let permit = state
         .login_permits
         .clone()
@@ -190,6 +203,34 @@ pub(crate) fn reply(value: Value) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_origin_protection_works_without_a_webauthn_engine() {
+        let service = Service::new("http://127.0.0.1:8080");
+        assert!(service.engine().is_err());
+        let mut headers = HeaderMap::new();
+        assert!(service.check_session_origin(&headers).is_err());
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:8080"),
+        );
+        assert!(service.check_session_origin(&headers).is_ok());
+        assert!(service.check_origin(&headers).is_err());
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:8081"),
+        );
+        assert!(service.check_session_origin(&headers).is_err());
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:8080"),
+        );
+        headers.append(
+            header::ORIGIN,
+            HeaderValue::from_static("http://127.0.0.1:8080"),
+        );
+        assert!(service.check_session_origin(&headers).is_err());
+    }
 
     #[test]
     fn configured_origin_is_canonical_and_never_accepts_another_port_or_subdomain() {

@@ -2,7 +2,7 @@
 mod business_support;
 #[path = "node_ip_queries/fixture.rs"]
 mod fixture;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;

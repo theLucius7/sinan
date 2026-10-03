@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod business_support;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 

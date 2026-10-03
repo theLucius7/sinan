@@ -103,7 +103,7 @@ impl PluginServer {
         } else if target.is_none() {
             (
                 InstallationState::Queued,
-                "启用请求已保存，正在生成初始运行配置".into(),
+                "启用请求已保存，等待首次空运行时安装；已有有效业务节点时请采集完整预检，并明确首次安装空运行时".into(),
             )
         } else if let Some(error) = self.manifest_error.as_ref() {
             (InstallationState::Failed, error.clone())

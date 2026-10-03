@@ -47,6 +47,7 @@ pub(super) async fn invitation(
     Path(id): Path<i64>,
     Json(input): Json<Invitation>,
 ) -> ApiResult<Response> {
+    let administrator = auth::require_admin(&state, &headers).await?;
     let proof = auth::proof::prepare(
         &state,
         &headers,
@@ -106,6 +107,7 @@ pub(super) async fn invitation(
     let expiry = now_timestamp() + 900;
     sqlx::query("UPDATE singbox_portal_accounts SET activation_hash=$2,activation_expires_at=$3 WHERE account_id=$1")
         .bind(account).bind(hash_token(&token)).bind(expiry).execute(&mut *tx).await?;
+    super::super::operations_workflows::event(&mut tx,Some(administrator),Some(id),"security_portal_invitation",json!({"reset_existing_keys":input.reset,"expires_at":expiry,"subscription_token_used":false})).await?;
     tx.commit().await?;
     Ok(keys::reply(
         json!({"url":format!("{}/#/plugins/sing-box/account/{account}?activate={token}",state.config.public_url),"expires_at":expiry}),

@@ -342,6 +342,7 @@ impl DiagnosticAdapter for NodeQualityAdapter {
                 } else {
                     Default::default()
                 },
+                cpu_max_percent: Default::default(),
                 cpu_weight: Default::default(),
                 io_weight: Default::default(),
                 oom_score_adjust: Default::default(),

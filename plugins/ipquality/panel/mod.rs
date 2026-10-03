@@ -65,6 +65,7 @@ impl DiagnosticPlugin for IpQualityPlugin {
                 budget: DiagnosticResourceBudget {
                     memory_max: 128 * 1024 * 1024,
                     tasks_max: 64,
+                    cpu_max_percent: None,
                     cpu_weight: 10,
                     io_weight: 10,
                     oom_score_adjust: 500,

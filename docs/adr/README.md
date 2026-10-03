@@ -105,3 +105,12 @@
 - [ADR 0070：subscription-source-lifecycle](0072-subscription-source-lifecycle.md)
 - [ADR 0071：ordered-path-publication-and-native-probe](0073-ordered-path-publication-and-native-probe.md)
 - [ADR 0072：private-panel-certificate-authorities](0074-private-panel-certificate-authorities.md)
+
+## 平台扩展（2026-10-03）
+
+- [0077：服务器接入与日常运维](0077-fleet-operations.md)
+- [0078：网络与验机工作台](0078-network-hardware-workbench.md)
+- [0079：DNS、证书与服务器网络配置](0079-network-configuration-and-dns-lifecycle.md)
+- [0080：sing-box 运维业务流程](0080-singbox-operations-workflows.md)
+- [0081：批量运维与独立恢复](0081-operations-recovery-and-cloud-ledger.md)
+- [0082：管理员权限、凭据与操作上下文](0082-control-center.md)

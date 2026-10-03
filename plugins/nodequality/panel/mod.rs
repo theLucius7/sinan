@@ -173,6 +173,7 @@ impl DiagnosticPlugin for NodeQualityPlugin {
                         512 * 1024 * 1024
                     },
                     tasks_max: if daily { 32 } else { 128 },
+                    cpu_max_percent: None,
                     cpu_weight: 10,
                     io_weight: 10,
                     oom_score_adjust: 500,

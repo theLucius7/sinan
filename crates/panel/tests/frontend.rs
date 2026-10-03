@@ -88,6 +88,21 @@ async fn embedded_frontend_serves_real_assets_without_masking_missing_endpoints(
             .await?,
         html
     );
+    let anonymous = panel
+        .client
+        .get(format!("{}/api/typo", panel.base))
+        .send()
+        .await?;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+    assert_ne!(
+        anonymous
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/html; charset=utf-8")
+    );
+    assert!(!anonymous.text().await?.contains("<!doctype html>"));
+    let cookie = panel.admin_cookie().await?;
     for path in [
         "/api",
         "/api/typo",
@@ -97,11 +112,14 @@ async fn embedded_frontend_serves_real_assets_without_masking_missing_endpoints(
         "/missing-page",
         "/src/main.tsx",
     ] {
-        let response = panel
-            .client
-            .get(format!("{}{path}", panel.base))
-            .send()
-            .await?;
+        let request = panel.client.get(format!("{}{path}", panel.base));
+        let response = if path.starts_with("/api") {
+            request.header(header::COOKIE, &cookie)
+        } else {
+            request
+        }
+        .send()
+        .await?;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         assert_ne!(
             response

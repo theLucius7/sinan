@@ -2,6 +2,7 @@ pub(crate) mod cache;
 mod disks;
 mod hardware;
 mod outbox;
+mod resources;
 pub mod worker;
 
 use sinan_protocol::{DiskMetrics, Metrics, NetworkMetrics, StaticInfo};
@@ -20,6 +21,7 @@ pub struct Collector {
     disks: Vec<Disk>,
     networks: Networks,
     last_cpu: Option<Instant>,
+    pressure: resources::Pressure,
     last_network: Option<(Instant, NetworkTotals)>,
     last_disks: Option<(Instant, DiskTotals)>,
 }
@@ -40,6 +42,7 @@ impl Collector {
             disks: disks::refresh(),
             networks: Networks::new_with_refreshed_list(),
             last_cpu: None,
+            pressure: resources::Pressure::default(),
             last_network: None,
             last_disks: None,
         }
@@ -78,6 +81,18 @@ impl Collector {
             virtualization: virtualization(),
             hostname: System::host_name(),
             agent_version: None,
+            interface_addresses: self
+                .networks
+                .iter()
+                .map(|(name, network)| {
+                    (
+                        name.clone(),
+                        normalized_addresses(
+                            network.ip_networks().iter().map(|address| address.addr),
+                        ),
+                    )
+                })
+                .collect(),
             ip_addresses: normalized_addresses(
                 self.networks
                     .values()
@@ -94,7 +109,10 @@ impl Collector {
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
-            ProcessRefreshKind::nothing(),
+            ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory()
+                .with_disk_usage(),
         );
         // Fresh inventories do not retain measurements after a failed refresh.
         self.disks = disks::refresh();
@@ -107,6 +125,10 @@ impl Collector {
             .filter(|_| !self.system.cpus().is_empty())
             .map(|_| f64::from(self.system.global_cpu_usage()))
             .filter(|value| value.is_finite());
+        let process_elapsed = self
+            .last_cpu
+            .map(|previous| now.duration_since(previous).as_secs_f64())
+            .filter(|seconds| *seconds > 0.0);
         self.last_cpu = Some(now);
         let totals: BTreeMap<_, _> = self
             .networks
@@ -212,6 +234,37 @@ impl Collector {
         if let Some((total, _)) = disks::totals(&self.disks) {
             metrics.extra.insert("disk_total".into(), total.into());
         }
+        metrics.extra.insert(
+            "process_resources".into(),
+            resources::processes(&self.system, cpu.is_some(), process_elapsed),
+        );
+        metrics
+            .extra
+            .insert("system_pressure".into(), self.pressure.sample());
+        let mounts: BTreeMap<String, bool> = std::fs::read_to_string("/proc/mounts")
+            .ok()
+            .into_iter()
+            .flat_map(|text| {
+                text.lines()
+                    .filter_map(|line| {
+                        let fields: Vec<_> = line.split_whitespace().collect();
+                        (fields.len() >= 4 && fields[0].starts_with("/dev/")).then(|| {
+                            (
+                                fields[1].to_owned(),
+                                fields[3].split(',').any(|option| option == "ro"),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        metrics
+            .extra
+            .insert("disk_mount_read_only".into(), serde_json::json!(mounts));
+        let inventory: Vec<_> = self.networks.keys().map(|name| serde_json::json!({"name":name,"physical":std::path::Path::new(&format!("/sys/class/net/{name}/device")).exists(),"loopback":name=="lo","duplicate_risk":name!="lo"&&!std::path::Path::new(&format!("/sys/class/net/{name}/device")).exists()})).collect();
+        metrics
+            .extra
+            .insert("network_inventory".into(), inventory.into());
         metrics
     }
 }

@@ -426,6 +426,7 @@ impl DiagnosticAdapter for IpQualityAdapter {
                 timeout_secs: spec.timeout_secs,
                 memory_max: sinan_adapter_sdk::MemoryMax::new(128 * 1024 * 1024)?,
                 tasks_max: sinan_adapter_sdk::TasksMax::new(64)?,
+                cpu_max_percent: Default::default(),
                 cpu_weight: sinan_adapter_sdk::CpuWeight::new(10)?,
                 io_weight: sinan_adapter_sdk::IoWeight::new(10)?,
                 oom_score_adjust: sinan_adapter_sdk::OomScoreAdjust::new(500)?,

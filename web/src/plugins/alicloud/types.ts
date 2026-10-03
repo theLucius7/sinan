@@ -1,7 +1,7 @@
 export type Target = { bandwidth_mbps: number; charge_type: 'PayByTraffic' | 'PayByBandwidth' }
 export type Snapshot = Target & { kind: string; cloud_id: string; region: string; public_ip: string; resource_charge_type: string; status: string }
 export type Bill = { month: string; queried_at: number; usage_micro_gb: number | null; rows: { instance_id: string; region: string; product_type: string; billing_item: string; usage: string; unit: string; amount: string; currency: string }[] }
-export type Account = { id: string; name: string; site: 'china' | 'international'; enabled: boolean; auto_enabled: boolean; limit_gb: number; revision: number; next_run_at: number; error_code: string | null; bill: Bill | null; traffic_error: string | null; traffic: { queried_at: number; mainland_bytes: string; overseas_bytes: string; regions: { region: string; bytes: string }[] } | null; balance?: { available: string; currency: string; queried_at: number } | null; balance_error?: string | null; balance_next_at?: number }
+export type Account = { credential_id?: string | null; id: string; name: string; site: 'china' | 'international'; enabled: boolean; auto_enabled: boolean; limit_gb: number; revision: number; next_run_at: number; error_code: string | null; bill: Bill | null; traffic_error: string | null; traffic: { queried_at: number; mainland_bytes: string; overseas_bytes: string; regions: { region: string; bytes: string }[] } | null; balance?: { available: string; currency: string; queried_at: number } | null; balance_error?: string | null; balance_next_at?: number }
 export type Resource = { id: string; account_id: string; name: string; kind: 'ecs' | 'eip'; region: string; cloud_id: string; auto_enabled: boolean; cap_mbps: number; revision: number; snapshot: Snapshot | null; checked_at: number | null; error_code: string | null; power_policy?: PowerPolicy; power_state?: PowerState | null; power_checked_at?: number | null; power_error?: string | null; manual_hold?: boolean; threshold_hold?: boolean; instance_bill?: { month: string; queried_at: number; rows: { item: string; amount: string; currency: string }[] } | null; bill_error?: string | null; bill_next_at?: number }
 export type Operation = { id: string; resource_id: string; account_revision?: number; resource_revision?: number; before_state: Snapshot; target: Target; source: string; billing_cycle: string | null; status: string; created_at: number; updated_at: number; expires_at: number; error_code: string | null; request_id: string | null }
 export type Overview = { accounts: Account[]; resources: Resource[]; operations: Operation[]; power_jobs?: PowerJob[]; events?: CloudEvent[] }
@@ -20,6 +20,7 @@ export const charge = (value: string) => value === 'PayByTraffic' ? '按流量�
 export const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '尚未查询'
 const states: Record<string, string> = { preview: '等待确认', queued: '等待执行', running: '执行中', uncertain: '结果待核对', succeeded: '已核对完成', failed: '未执行', cancelled: '已取消', dismissed: '已人工结束跟踪' }
 const messages: Record<string, string> = {
+  credential_unavailable: '集中云凭据停用、用途不符或解密密钥缺失', credential_invalid: '集中云凭据字段或提供方不符',
   authentication_failed: '访问密钥无效或缺少权限', rate_limited: '云服务限流，稍后重试', resource_not_found: '未找到指定地域和标识的资源',
   capacity_unavailable: '库存或抢占价格条件不足，保活冷却后再尝试', insufficient_balance: '账号余额不足或资源欠费，请在云端核对', resource_locked: '云端已锁定实例', request_rejected: '云端明确拒绝请求，请核对状态与权限',
   stop_mode_unsupported: '节省停机需要按量付费 VPC 实例', stop_mode_mismatch: '实例已停止，但停机模式与请求不符，请核对收费', stop_mode_unknown: '实例已停止，但无法核实实际停机模式',
@@ -30,8 +31,8 @@ const messages: Record<string, string> = {
 }
 export const status = (value: string) => Object.hasOwn(states, value) ? states[value] : '状态未知'
 export const message = (value: string | null | undefined) => value ? Object.hasOwn(messages, value) ? messages[value] : '云接口暂时不可用' : ''
-export function accountWrite(account: Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb'>, key: string, secret: string, revision?: number) {
-  return { name: account.name.trim(), site: account.site, enabled: account.enabled, auto_enabled: account.auto_enabled, limit_gb: account.limit_gb, ...(revision === undefined ? {} : { revision }), ...(key.trim() || secret.trim() ? { access_key_id: key.trim(), access_key_secret: secret.trim() } : {}) }
+export function accountWrite(account: Pick<Account, 'name' | 'site' | 'enabled' | 'auto_enabled' | 'limit_gb'>, key: string, secret: string, revision?: number, credentialId = '', legacy = false) {
+  return { name: account.name.trim(), site: account.site, enabled: account.enabled, auto_enabled: account.auto_enabled, limit_gb: account.limit_gb, ...(revision === undefined ? {} : { revision }), ...(credentialId.trim() ? { credential_id: credentialId.trim() } : legacy ? { legacy_credentials: true, ...(key.trim() || secret.trim() ? { access_key_id: key.trim(), access_key_secret: secret.trim() } : {}) } : {}) }
 }
 export function billUsable(account: Account, now = Date.now() / 1000) {
   const month = new Date((now + 8 * 3600) * 1000).toISOString().slice(0, 7), bill = account.bill

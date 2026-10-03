@@ -16,6 +16,12 @@ import Statistics from '../pages/Statistics'
 import ServerToolPage from '../pages/ServerToolPage'
 import type { AppRoute } from './routes'
 
+const FleetOperations = lazy(() => import('../fleet/FleetOperations'))
+const NetworkWorkbench = lazy(() => import('../network-workbench/NetworkWorkbench'))
+const NetworkConfiguration = lazy(() => import('../network-configuration/NetworkConfiguration'))
+const OperationsPage = lazy(() => import('../operations/OperationsPage'))
+const ControlCenter = lazy(() => import('../control-center/ControlCenter'))
+
 const Ddns = lazy(() => import('../plugins/ddns/Ddns'))
 const Alicloud = lazy(() => import('../plugins/alicloud/Alicloud'))
 
@@ -23,6 +29,10 @@ export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 
   switch (route.page) {
     case 'server': {
       const { serverId, section } = route
+      if (section === 'fleet') return <Suspense fallback={<Loading />}><FleetOperations key={serverId} serverId={serverId} /></Suspense>
+      if (section === 'network-workbench') return <Suspense fallback={<Loading />}><NetworkWorkbench key={serverId} initialServerId={serverId} /></Suspense>
+      if (section === 'network-configuration') return <Suspense fallback={<Loading />}><NetworkConfiguration key={serverId} serverId={serverId} /></Suspense>
+      if (section === 'operations') return <Suspense fallback={<Loading />}><OperationsPage key={serverId} selectedServerId={serverId} /></Suspense>
       if (section === 'ddns') {
         return <Suspense fallback={<Loading />}><Ddns key={serverId} serverId={serverId} /></Suspense>
       }
@@ -30,6 +40,11 @@ export default function AdminPage({ route }: { route: Exclude<AppRoute, { page: 
       if (section) return <ServerToolPage key={`${serverId}/${section}`} id={serverId} section={section} />
       return <ServerDetail key={serverId} id={serverId} />
     }
+    case 'fleet': return <Suspense fallback={<Loading />}><FleetOperations /></Suspense>
+    case 'network-workbench': return <Suspense fallback={<Loading />}><NetworkWorkbench /></Suspense>
+    case 'network-configuration': return <Suspense fallback={<Loading />}><NetworkConfiguration /></Suspense>
+    case 'operations': return <Suspense fallback={<Loading />}><OperationsPage /></Suspense>
+    case 'control-center': return <Suspense fallback={<Loading />}><ControlCenter /></Suspense>
     case 'servers': return <Servers />
     case 'singbox-overview': return <SingboxOverview />
     case 'statistics': return <Statistics />

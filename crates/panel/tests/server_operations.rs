@@ -15,6 +15,47 @@ fn preferences(public: bool) -> Value {
 }
 
 #[sqlx::test]
+async fn fleet_asset_and_access_changes_reject_concurrent_stale_forms(pool: PgPool) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let id = panel
+        .create_server(&cookie, "TEST_ONLY fleet form concurrency")
+        .await?;
+    let path = format!("/api/servers/{id}/fleet");
+    let original: Value = panel
+        .admin(Method::GET, &path, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let body = json!({"asset":{"provider":"TEST_ONLY provider first"},"policy":original["policy"],"expected_digest":original["digest"]});
+    panel
+        .admin(Method::PUT, &path, &cookie, Some(body))
+        .await?
+        .error_for_status()?;
+    let stale = json!({"asset":{"provider":"TEST_ONLY stale overwrite"},"policy":original["policy"],"expected_digest":original["digest"]});
+    assert_eq!(
+        panel
+            .admin(Method::PUT, &path, &cookie, Some(stale))
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let current: Value = panel
+        .admin(Method::GET, &path, &cookie, None)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(current["asset"]["provider"], "TEST_ONLY provider first");
+    assert_ne!(current["digest"], original["digest"]);
+    let policy: sinan_protocol::fleet::AccessPolicy =
+        serde_json::from_value(current["policy"].clone())?;
+    assert!(!policy.runtime_inspection);
+    Ok(())
+}
+
+#[sqlx::test]
 async fn public_dashboard_is_opt_in_and_never_exposes_hidden_servers_or_private_fields(
     pool: PgPool,
 ) -> Result<()> {
@@ -414,5 +455,79 @@ async fn traffic_correction_preserves_new_samples_and_expires_with_cycle_or_sele
     assert_eq!(after["traffic"]["uploaded"], "105");
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT COUNT(*) FROM server_traffic_corrections WHERE server_id=$1 AND invalidated_at IS NOT NULL").bind(id).fetch_one(&panel.state.pool).await?,1);
 
+    Ok(())
+}
+
+#[sqlx::test]
+async fn monitoring_only_sessions_and_tokens_keep_private_server_fields_hidden(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool).await?;
+    let cookie = panel.admin_cookie().await?;
+    let visible = panel.create_server(&cookie, "监控可见").await?;
+    let hidden = panel.create_server(&cookie, "监控隐藏").await?;
+    for id in [visible, hidden] {
+        sqlx::query("UPDATE servers SET device_public_key=$2,static_info=$3,asset_settings=$4,latest_metrics=$5 WHERE id=$1")
+            .bind(id).bind("TEST_ONLY_PRIVATE_IDENTITY")
+            .bind(json!({"hostname":"TEST_ONLY_PRIVATE_HOST","ip_addresses":["192.0.2.1"],"cpu_cores":4}))
+            .bind(json!({"hidden":id==hidden,"price":"123.45","agent_mirror":"https://mirror.example.com","region":"JP"}))
+            .bind(json!({"cpu_percent":10,"process_resources":{"private":"TEST_ONLY_PROCESS_DETAIL"},"network_interfaces":{"TEST_ONLY_PRIVATE_INTERFACE":{"transmitted_bytes":123}}}))
+            .execute(&panel.state.pool).await?;
+    }
+    let token = "sinan_api_TEST_ONLY_MONITORING";
+    sqlx::query("INSERT INTO management_api_tokens(id,admin_id,token_hash,name,capabilities,server_ids,all_servers,expires_at,created_at) VALUES($1,1,$2,'test-monitoring',$3,'[]',true,$4,$5)")
+        .bind(uuid::Uuid::new_v4()).bind(sinan_panel::auth::hash_token(token)).bind(json!(["monitoring:read"]))
+        .bind(now_timestamp()+3600).bind(now_timestamp()).execute(&panel.state.pool).await?;
+    for suffix in ["/servers", "/live"] {
+        let response = panel
+            .client
+            .get(format!("{}/api/dashboard{suffix}", panel.base))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .error_for_status()?;
+        let text = response.text().await?;
+        assert!(text.contains("cpu_percent"));
+        for private in [
+            "TEST_ONLY_PRIVATE",
+            "TEST_ONLY_PROCESS_DETAIL",
+            "device_public_key",
+            "agent_mirror",
+            "price",
+        ] {
+            assert!(!text.contains(private), "{private}");
+        }
+    }
+    sqlx::query("UPDATE administrator_profiles SET role='viewer',capabilities=$1,all_servers=true WHERE admin_id=1").bind(json!(["monitoring:read"])).execute(&panel.state.pool).await?;
+    let text = panel
+        .admin(Method::GET, "/api/dashboard/servers", &cookie, None)
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let servers: Vec<Value> = serde_json::from_str(&text)?;
+    assert_eq!(servers.len(), 1);
+    assert_eq!(servers[0]["id"], visible);
+    assert_eq!(servers[0]["public_view"], true);
+    for private in [
+        "TEST_ONLY_PRIVATE",
+        "device_public_key",
+        "agent_mirror",
+        "price",
+    ] {
+        assert!(!text.contains(private), "{private}");
+    }
+    assert_eq!(
+        panel
+            .admin(
+                Method::GET,
+                &format!("/api/dashboard/servers/{hidden}"),
+                &cookie,
+                None
+            )
+            .await?
+            .status(),
+        StatusCode::NOT_FOUND
+    );
     Ok(())
 }

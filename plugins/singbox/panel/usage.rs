@@ -44,8 +44,8 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
     .fetch_one(&mut *tx)
     .await?;
     ensure!(active, "unknown usage server");
-    let inserted = sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash) VALUES($1,$2,$3::text::numeric,$4) ON CONFLICT DO NOTHING")
-        .bind(server_id).bind(batch.epoch).bind(&seq).bind(&hash).execute(&mut *tx).await?.rows_affected() != 0;
+    let inserted = sqlx::query("INSERT INTO usage_batches(server_id,epoch,seq,payload_hash,received_at) VALUES($1,$2,$3::text::numeric,$4,$5) ON CONFLICT DO NOTHING")
+        .bind(server_id).bind(batch.epoch).bind(&seq).bind(&hash).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?.rows_affected() != 0;
     if inserted {
         for (record, (user_id, node_id)) in batch.records.iter().zip(identities) {
             // Revoked identities remain valid for terminal samples and offline outbox replay.
@@ -68,6 +68,8 @@ pub async fn ingest(state: &AppState, server_id: i64, mut batch: UsageBatch) -> 
         let previous: String = sqlx::query_scalar("SELECT payload_hash FROM usage_batches WHERE server_id=$1 AND epoch=$2 AND seq=$3::text::numeric")
             .bind(server_id).bind(batch.epoch).bind(&seq).fetch_one(&mut *tx).await?;
         ensure!(previous == hash, "usage batch identity changed payload");
+        sqlx::query("UPDATE usage_batches SET last_replayed_at=$4,replay_count=LEAST(replay_count,9223372036854775806)+1 WHERE server_id=$1 AND epoch=$2 AND seq=$3::text::numeric")
+            .bind(server_id).bind(batch.epoch).bind(&seq).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     agent_api::notify(

@@ -4,6 +4,7 @@ mod tencent;
 
 use super::{
     cloudflare::{Cloudflare, Failure, Outcome},
+    lifecycle::{Snapshot, expected_matches},
     model::{Provider, Rule, domain},
 };
 use serde_json::Value;
@@ -43,6 +44,7 @@ impl Providers {
 }
 
 impl Providers {
+    #[cfg(test)]
     pub(super) async fn reconcile_guarded<G, Check, Checked>(
         &self,
         rule: &Rule,
@@ -53,15 +55,55 @@ impl Providers {
         Check: FnMut() -> Checked,
         Checked: Future<Output = Result<G, Failure>>,
     {
+        self.reconcile_expected_guarded(rule, ip, None, check).await
+    }
+
+    pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
         match rule.config.provider {
-            Provider::Cloudflare => self.cloudflare.reconcile_guarded(rule, ip, check).await,
-            Provider::Aliyun => self.aliyun.reconcile_guarded(rule, ip, check).await,
-            Provider::Tencent => self.tencent.reconcile_guarded(rule, ip, check).await,
-            Provider::Huawei => self.huawei.reconcile_guarded(rule, ip, check).await,
+            Provider::Cloudflare => self.cloudflare.inspect(rule).await,
+            Provider::Aliyun => self.aliyun.inspect(rule).await,
+            Provider::Tencent => self.tencent.inspect(rule).await,
+            Provider::Huawei => self.huawei.inspect(rule).await,
+        }
+    }
+
+    pub(super) async fn reconcile_expected_guarded<G, Check, Checked>(
+        &self,
+        rule: &Rule,
+        ip: IpAddr,
+        expected: Option<&Snapshot>,
+        check: Check,
+    ) -> Result<Outcome, Failure>
+    where
+        Check: FnMut() -> Checked,
+        Checked: Future<Output = Result<G, Failure>>,
+    {
+        match rule.config.provider {
+            Provider::Cloudflare => {
+                self.cloudflare
+                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .await
+            }
+            Provider::Aliyun => {
+                self.aliyun
+                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .await
+            }
+            Provider::Tencent => {
+                self.tencent
+                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .await
+            }
+            Provider::Huawei => {
+                self.huawei
+                    .reconcile_expected_guarded(rule, ip, expected, check)
+                    .await
+            }
         }
     }
 }
 
+#[derive(Clone)]
 struct Record {
     id: String,
     name: String,
@@ -71,6 +113,22 @@ struct Record {
     ttl: u64,
     active: bool,
     marker: Option<String>,
+}
+
+impl Record {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            kind: self.kind.clone(),
+            line: self.line.clone(),
+            values: self.values.clone(),
+            ttl: self.ttl,
+            proxied: false,
+            active: self.active,
+            marker: self.marker.clone(),
+        }
+    }
 }
 
 fn text(value: &Value, key: &str) -> Result<String, Failure> {
@@ -172,3 +230,8 @@ fn verify(record: Record, rule: &Rule, record_id: &str, ip: IpAddr) -> Result<Ou
         status: "updated",
     })
 }
+
+mod record_reads;
+mod record_writes;
+mod records;
+pub(super) use records::RecordClient;

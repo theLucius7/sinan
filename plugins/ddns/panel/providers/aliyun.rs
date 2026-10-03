@@ -16,9 +16,17 @@ impl AliDns {
         action: &str,
         params: &[(&str, String)],
     ) -> Result<Value, Failure> {
-        self.0
-            .call(&rule.access_key_id, &rule.access_key_secret, action, params)
+        self.call_credentials(&rule.access_key_id, &rule.access_key_secret, action, params)
             .await
+    }
+    pub(super) async fn call_credentials(
+        &self,
+        key: &str,
+        secret: &str,
+        action: &str,
+        params: &[(&str, String)],
+    ) -> Result<Value, Failure> {
+        self.0.call(key, secret, action, params).await
     }
 }
 
@@ -45,16 +53,7 @@ fn record(value: &Value) -> Result<Record, Failure> {
 }
 
 impl AliDns {
-    pub(super) async fn reconcile_guarded<G, Check, Checked>(
-        &self,
-        rule: &Rule,
-        ip: IpAddr,
-        mut check: Check,
-    ) -> Result<Outcome, Failure>
-    where
-        Check: FnMut() -> Checked,
-        Checked: Future<Output = Result<G, Failure>>,
-    {
+    async fn read_records(&self, rule: &Rule) -> Result<Vec<Record>, Failure> {
         let spec = &rule.config;
         let zone = self
             .call(
@@ -97,7 +96,31 @@ impl AliDns {
             return Err("record_conflict".into());
         }
         let records = entries.iter().map(record).collect::<Result<Vec<_>, _>>()?;
-        let existing = choose(rule, &records, &spec.zone_id)?;
+        Ok(records)
+    }
+
+    pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
+        let records = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &rule.config.zone_id)?;
+        Ok(existing.map(Record::snapshot))
+    }
+
+    pub(super) async fn reconcile_expected_guarded<G, Check, Checked>(
+        &self,
+        rule: &Rule,
+        ip: IpAddr,
+        expected: Option<&Snapshot>,
+        mut check: Check,
+    ) -> Result<Outcome, Failure>
+    where
+        Check: FnMut() -> Checked,
+        Checked: Future<Output = Result<G, Failure>>,
+    {
+        let spec = &rule.config;
+        let records = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &rule.config.zone_id)?;
+        let current = existing.map(Record::snapshot);
+        expected_matches(current.as_ref(), expected)?;
         if let Some(record) = existing.filter(|r| same(r, rule, ip)) {
             let _guard = check().await?;
             return Ok(Outcome {

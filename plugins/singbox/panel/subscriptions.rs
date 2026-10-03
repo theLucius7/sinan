@@ -1,5 +1,5 @@
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
 };
 use axum::{
@@ -31,6 +31,7 @@ fn validate_format(format: &str) -> ApiResult<()> {
 }
 
 struct Snapshot {
+    template: Option<Value>,
     nodes: Vec<Node>,
     external: super::external_access::model::SubscriptionNodes,
     granted_nodes: i64,
@@ -82,6 +83,9 @@ impl Snapshot {
             return Err(ApiError::Conflict(self.message().1));
         }
         if format == "links" {
+            if self.template.is_some() {
+                return Err(ApiError::Conflict("当前用户启用完整客户端模板，请使用 singbox 格式；链接格式不能表达选择组、DNS 和路由".into()));
+            }
             if self.external.granted > 0 {
                 return Err(ApiError::Conflict(
                     "此订阅包含外部节点，请使用 format=singbox 下载完整 sing-box JSON".into(),
@@ -97,12 +101,15 @@ impl Snapshot {
             if self.nodes.is_empty() && self.external.nodes.is_empty() {
                 return Err(ApiError::Conflict(self.message().1));
             }
-            Ok(sinan_compiler::client::compile_with_external(
-                &self.nodes,
-                user_id,
-                &self.external.nodes,
+            super::operations_workflows::apply_definition(
+                sinan_compiler::client::compile_with_external(
+                    &self.nodes,
+                    user_id,
+                    &self.external.nodes,
+                )
+                .map_err(anyhow::Error::from)?,
+                self.template.as_ref(),
             )
-            .map_err(anyhow::Error::from)?)
         }
     }
 }
@@ -190,12 +197,51 @@ async fn load(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> ApiResult<Sna
     let eligible_nodes = eligible_nodes + external.nodes.len();
     let granted_nodes = granted_nodes + external.granted as i64;
     Ok(Snapshot {
+        template: sqlx::query_scalar(
+            "SELECT definition FROM singbox_client_templates WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await?,
         nodes,
         external,
         granted_nodes,
         eligible_nodes,
         entitlement,
     })
+}
+
+pub(super) async fn diagnostic_on(
+    tx: &mut Transaction<'_, Postgres>,
+    user: i64,
+) -> ApiResult<Value> {
+    let snapshot = load(tx, user).await?;
+    let (mut status, mut message) = snapshot.message();
+    if status == "ready" {
+        match snapshot.content(user, "singbox") {
+            Ok(_) => {}
+            Err(ApiError::Conflict(reason)) => {
+                status = "format_unavailable";
+                message = reason;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(
+        json!({"status":status,"message":message,"entitlement":snapshot.entitlement,"granted_nodes":snapshot.granted_nodes,"eligible_nodes":snapshot.eligible_nodes,"ready_managed_nodes":snapshot.nodes.len(),"ready_external_nodes":snapshot.external.nodes.len(),"client_template":snapshot.template.is_some()}),
+    )
+}
+
+pub(super) async fn content_on(
+    tx: &mut Transaction<'_, Postgres>,
+    user: i64,
+    with_template: bool,
+) -> ApiResult<String> {
+    let mut snapshot = load(tx, user).await?;
+    if !with_template {
+        snapshot.template = None;
+    }
+    snapshot.content(user, "singbox")
 }
 
 fn content_type(format: &str) -> &'static str {
@@ -239,7 +285,26 @@ pub async fn get(
     .ok_or(ApiError::NotFound)?;
     let snapshot = load(&mut tx, user_id).await?;
     tx.commit().await?;
-    let body = snapshot.content(user_id, format)?;
+    let body = snapshot.content(user_id, format);
+    let mut audit = state.pool.begin().await?;
+    let record: bool = sqlx::query_scalar("SELECT subscription_days>0 AND COALESCE((SELECT days>0 FROM record_retention_policy WHERE kind='proxy-access'),TRUE) FROM singbox_operation_privacy WHERE singleton").fetch_one(&mut *audit).await?;
+    if record {
+        super::operations_workflows::record_subscription(
+            &mut audit,
+            user_id,
+            format,
+            snapshot.nodes.len(),
+            snapshot.external.nodes.len(),
+            if body.is_ok() {
+                "generated"
+            } else {
+                "unavailable"
+            },
+        )
+        .await?;
+    }
+    audit.commit().await?;
+    let body = body?;
     let mut response = (
         [
             (header::CONTENT_TYPE, content_type(format)),
@@ -267,7 +332,7 @@ pub async fn preview(
     Path(id): Path<i64>,
     Query(query): Query<SubscriptionQuery>,
 ) -> ApiResult<Response> {
-    auth::require_admin(&state, &headers).await?;
+    let administrator = super::secret_access::require_reveal(&state, &headers).await?;
     let format = query.format.as_deref().unwrap_or("singbox");
     validate_format(format)?;
     let mut tx = state.pool.begin().await?;
@@ -286,8 +351,12 @@ pub async fn preview(
     .ok_or(ApiError::NotFound)?;
     let snapshot = load(&mut tx, id).await?;
     tx.commit().await?;
+    let mut audit = state.pool.begin().await?;
+    super::operations_workflows::event(&mut audit,Some(administrator),Some(id),"security_subscription_credentials_read",json!({"format":format,"managed_nodes":snapshot.nodes.len(),"external_nodes":snapshot.external.nodes.len(),"credential_values_recorded":false})).await?;
+    audit.commit().await?;
     let mut formats = vec!["singbox"];
-    if snapshot.external.granted == 0
+    if snapshot.template.is_none()
+        && snapshot.external.granted == 0
         && snapshot
             .nodes
             .iter()

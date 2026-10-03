@@ -542,6 +542,8 @@ class StandaloneBootstrapTests(unittest.TestCase):
     def setUpClass(cls):
         cls.root_command = [] if os.getuid() == 0 else ["sudo", "-n"]
         if cls.root_command:
+            if not shutil.which("sudo"):
+                raise unittest.SkipTest("standalone bootstrap requires privileged root access; sudo is unavailable")
             result = subprocess.run(cls.root_command + ["true"], capture_output=True, check=False)
             if result.returncode:
                 raise unittest.SkipTest("standalone bootstrap needs root or passwordless sudo")

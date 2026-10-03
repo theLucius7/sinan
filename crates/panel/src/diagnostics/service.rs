@@ -102,6 +102,7 @@ pub fn ready(
         sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
         DIAGNOSTIC_SERVICE_CAPABILITY,
         sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
+        sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
     ]
     .into_iter()
     .chain(plugin.required_capabilities().iter().copied())
@@ -110,6 +111,11 @@ pub fn ready(
             .as_array()
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(required)))
         {
+            if required == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY {
+                return Err(ApiError::Conflict(
+                    "此 Agent 尚不支持诊断 CPU 百分比硬上限，请升级并使用支持 systemd/cgroup v2 CPU 控制器的设备".into(),
+                ));
+            }
             return Err(ApiError::Conflict(
                 "此 Agent 尚不支持当前诊断服务，请先升级 Agent".into(),
             ));
@@ -269,6 +275,7 @@ pub(crate) async fn create_job(
     request: Value,
 ) -> ApiResult<ReportRecord> {
     let mut tx = state.pool.begin().await?;
+    crate::fleet::ensure_accepts_tasks_tx(&mut tx, id).await?;
     let row = sqlx::query("SELECT static_info,last_seen,capabilities FROM servers WHERE id=$1 AND deleted_at IS NULL FOR UPDATE")
         .bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let arch = ready(&row, plugin)?;

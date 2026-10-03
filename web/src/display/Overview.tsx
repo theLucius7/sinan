@@ -53,7 +53,7 @@ export default function Overview({ now }: { now: number }) {
   const visible = useMemo(() => selectServers(entries, query, filter, group, region, sort, unavailable), [entries, query, filter, group, region, sort, unavailable])
   const counts = dashboardCounts(entries)
   const upload = aggregate(entries, 'transmit_bytes_per_sec', true), download = aggregate(entries, 'receive_bytes_per_sec', true)
-  const completeCounters = entries.filter(server => network(server.latest_metrics, 'transmitted_bytes') !== null && network(server.latest_metrics, 'received_bytes') !== null)
+  const completeCounters = entries.filter(server => network(server.latest_metrics, 'transmitted_bytes', server.asset_settings?.network_interface) !== null && network(server.latest_metrics, 'received_bytes', server.asset_settings?.network_interface) !== null)
   const sent = aggregate(completeCounters, 'transmitted_bytes'), received = aggregate(completeCounters, 'received_bytes')
   const total = sent.value === null || received.value === null ? null : sent.value + received.value
   const costs = costSummary(entries, currency, quote, now)
@@ -61,12 +61,12 @@ export default function Overview({ now }: { now: number }) {
   const needsConversion = entries.some(server => !server.public_view && server.asset_settings?.price !== null && server.asset_settings?.price !== undefined && server.asset_settings.currency !== currency)
   const referenceState = quoteState(quote, currencyError)
   const staleCosts = needsConversion && referenceState !== 'fresh'
-  const busiest = (field: 'transmit_bytes_per_sec' | 'receive_bytes_per_sec') => entries.filter(fresh).reduce<Server | null>((best, server) => (network(server.latest_metrics, field) ?? -1) > (best ? network(best.latest_metrics, field) ?? -1 : -1) ? server : best, null)
+  const busiest = (field: 'transmit_bytes_per_sec' | 'receive_bytes_per_sec') => entries.filter(fresh).reduce<Server | null>((best, server) => (network(server.latest_metrics, field, server.asset_settings?.network_interface) ?? -1) > (best ? network(best.latest_metrics, field, best.asset_settings?.network_interface) ?? -1 : -1) ? server : best, null)
   const topUpload = busiest('transmit_bytes_per_sec'), topDownload = busiest('receive_bytes_per_sec')
   const peak = (server: Server | null, field: 'transmit_bytes_per_sec' | 'receive_bytes_per_sec') => {
     if (unavailable) return '等待更新'
     if (!server) return '暂无有效速率数据'
-    const value = network(server.latest_metrics, field)
+    const value = network(server.latest_metrics, field, server.asset_settings?.network_interface)
     return value === null ? '暂无有效速率数据' : value > 0 ? <span title={server.name}>峰值 {server.name}</span> : '暂无实时流量'
   }
   const [uploadValue, uploadUnit] = (unavailable ? '—' : speed(upload.value)).split(' ')

@@ -19,7 +19,7 @@ export default function NodeDeployment({ serverId, server, onClose }: { serverId
   const failed = status && revisionKnown && status.last_result_rev === status.target_rev && !!status.last_error
   const serverKnown = server?.enabled === true && server.online === true
   const applied = status && revisionKnown && status.applied_rev === status.target_rev && status.healthy === true && !failed && current?.pending === false && serverKnown
-  const title = current?.pending ? '等待合并发布' : failed ? '最新配置应用失败' : applied ? '目标配置已应用' : status && revisionKnown && serverKnown ? '等待设备应用' : current && !status ? '尚未发布配置' : '应用状态待确认'
+  const title = current?.pending ? '目标配置待发布' : failed ? '最新配置应用失败' : applied ? '目标配置已应用' : status && revisionKnown && serverKnown ? '等待设备应用' : current && !status ? '尚未发布配置' : '应用状态待确认'
   return <Modal title={`${server?.name ?? `服务器 #${serverId}`} · 节点部署`} onClose={onClose} wide busy={action.busy}>
     <div className="modal-body node-deployment">
       <ErrorNotice message={resource.error || action.error} retry={resource.reload} />
@@ -31,8 +31,8 @@ export default function NodeDeployment({ serverId, server, onClose }: { serverId
         <p>每台服务器统一发布完整配置。普通节点没有有效授权或已停用时，等待设备应用新配置后不再监听；链路出口可能凭内部连接凭据监听。设备离线时需等待重连，新配置失败时可能仍运行上一次健康配置。应用状态不表示已验证公网可达或链路连通。</p>
         {current.authorized_nodes === 0 && <p>当前有效用户授权节点数为 0。普通节点需先到<a href="#/plugins/sing-box/users" onClick={onClose}>代理用户</a>分配权限与套餐；仅承担链路出口的服务器仍可能使用内部连接凭据，不需要为出口单独授权用户。</p>}
       </>}
-      <div className="node-deployment-heading"><h3>部署条件检查</h3><button className="button button-secondary" disabled={action.busy || Boolean(resourceWriteError(resource))} onClick={() => { if (resourceWriteError(resource)) return; setCheck(null); void action.run(() => api<Readiness>(`${path}/check`, 'POST'), setCheck) }}>{action.busy ? '正在检查…' : '检查部署条件'}</button></div>
-      <p>检查设备接入、在线状态、插件能力和匹配的签名运行时。检查通过后仍以 Agent 的应用与健康回报为准。</p>
+      <div className="node-deployment-heading"><h3>基础安装条件检查</h3><button className="button button-secondary" disabled={action.busy || Boolean(resourceWriteError(resource))} onClick={() => { if (resourceWriteError(resource)) return; setCheck(null); void action.run(() => api<Readiness>(`${path}/check`, 'POST'), setCheck) }}>{action.busy ? '正在检查…' : '检查基础安装条件'}</button></div>
+      <p>检查设备接入、在线状态、插件能力和匹配的签名运行时。新增或修改有效普通节点须在下方查看配置差异、采集并确认完整部署预检；最终以 Agent 的应用与健康回报为准。</p>
       {check && <ul className="node-checks">{check.checks.map(item => <li key={item.name}><Badge tone={item.passed ? 'good' : 'warm'}>{item.name}</Badge><span>{item.detail}</span></li>)}</ul>}
       <RuntimeOperations serverId={serverId} status={status} deploymentError={() => resourceWriteError(resource)} getStatus={() => resource.getCurrent()?.status} />
       <div className="node-deployment-links"><a href={`#/servers/${serverId}`} onClick={onClose}>服务器接入与状态</a><a href="#/plugins/catalog" onClick={onClose}>运行时制品</a></div>

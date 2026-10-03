@@ -33,7 +33,7 @@ export default function ServerView({ id, now }: { id: number; now: number }) {
         ['内核版本', info.kernel], ['进程 / 连接', `${count(metrics.processes)} / ${count(number(metrics.tcp_connections) !== null && number(metrics.udp_connections) !== null ? metrics.tcp_connections! + metrics.udp_connections! : null)}`],
       ]} />
     </div>
-    <div className="d-live-strip d-glass"><div><span>处理器</span><strong>{percentage(metrics.cpu_percent)}</strong></div><div><span>已用内存</span><strong>{size(metrics.memory_used)}</strong></div><div><span>实时上行</span><strong className="d-good">{live ? speed(network(metrics, 'transmit_bytes_per_sec')) : '—'}</strong></div><div><span>实时下行</span><strong className="d-info">{live ? speed(network(metrics, 'receive_bytes_per_sec')) : '—'}</strong></div></div>
+    <div className="d-live-strip d-glass"><div><span>处理器</span><strong>{percentage(metrics.cpu_percent)}</strong></div><div><span>已用内存</span><strong>{size(metrics.memory_used)}</strong></div><div><span>实时上行</span><strong className="d-good">{live ? speed(network(metrics, 'transmit_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</strong></div><div><span>实时下行</span><strong className="d-info">{live ? speed(network(metrics, 'receive_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</strong></div></div>
     <ResourceCharts key={`resources/${id}/${Boolean(server.public_view)}`} server={server} now={now} unavailable={unavailable} />
     <AssetInfo server={server} now={now} detail />
     <ProbeCharts key={`probes/${id}/${Boolean(server.public_view)}`} id={id} now={now} publicView={Boolean(server.public_view)} unavailable={unavailable || !server.online} />

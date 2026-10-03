@@ -4,3 +4,8 @@
 .runtime-service-logs { max-height: 300px; overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.8; }
 .runtime-operations details { margin-top: 16px; }
 .runtime-operations details li { margin: 8px 0; }
+
+.deployment-preflight { min-width: 0; overflow-wrap: anywhere; }
+.deployment-preflight .node-checks li > div { min-width: 0; }
+.deployment-preflight .node-checks p { margin-top: 0; }
+.deployment-preflight .runtime-service-logs { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }

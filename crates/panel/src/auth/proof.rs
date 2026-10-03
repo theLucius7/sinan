@@ -1,4 +1,4 @@
-use super::{LoginRequest, require_admin, security, totp, verified_password};
+use super::{LoginRequest, require_admin, security, totp, verified_admin_password};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -22,10 +22,10 @@ pub(crate) async fn prepare(
     peer: SocketAddr,
     input: LoginRequest,
 ) -> ApiResult<Proof> {
-    require_admin(state, headers).await?;
+    let admin_id = require_admin(state, headers).await?;
     let session = security::session_hash(headers)?;
-    let permit = passkeys::permit(state, headers, peer).await?;
-    let (hash, permit) = verified_password(state, input.password, permit).await?;
+    let permit = passkeys::password_permit(state, headers, peer).await?;
+    let (hash, permit) = verified_admin_password(state, admin_id, input.password, permit).await?;
     Ok(Proof {
         session,
         hash: hash.ok_or_else(|| ApiError::BadRequest("管理员密码或验证码不正确。".into()))?,
@@ -50,8 +50,9 @@ impl Proof {
             .ok_or_else(|| {
                 ApiError::BadRequest("管理员密码或验证码不正确、已过期或已使用。".into())
             })?;
-            sqlx::query("UPDATE admins SET totp_last_step=$1 WHERE id=1")
+            sqlx::query("UPDATE admins SET totp_last_step=$1 WHERE id=$2")
                 .bind(step)
+                .bind(row.try_get::<i64, _>("id")?)
                 .execute(&mut **tx)
                 .await?;
         }

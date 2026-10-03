@@ -17,7 +17,7 @@ async fn real_systemd_diagnostic_cancellation_confirms_process_and_private_mount
         let job = ServiceJob {
             unit: unit.clone(), program: "/bin/sh".into(), args: vec![script.to_str().context("fixture path is not UTF-8")?.into()],
             working_directory: directory.clone(), timeout_secs: 45,
-            memory_max: Default::default(), tasks_max: Default::default(), cpu_weight: Default::default(),
+            memory_max: Default::default(), tasks_max: Default::default(), cpu_max_percent: Default::default(), cpu_weight: Default::default(),
             io_weight: Default::default(), oom_score_adjust: Default::default(),
         };
         services.start_job(&job).await?;

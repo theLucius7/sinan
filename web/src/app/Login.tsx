@@ -9,11 +9,12 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
+    const login_name = String(data.get('login_name') ?? 'admin')
     const password = String(data.get('password') ?? '')
     const totp_code = String(data.get('totp_code') ?? '')
     void action.run(async () => {
       try {
-        await api('/api/login', 'POST', { password, totp_code })
+        await api('/api/login', 'POST', { login_name, password, totp_code })
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
           throw new Error('密码或验证码不正确、已过期或已使用，请重新输入。')
@@ -45,6 +46,7 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
         <p>输入管理员密码；已启用二步验证时，还需验证器中的验证码。</p>
         <ErrorNotice message={action.error || notice} />
         <form onSubmit={submit}>
+          <label className="field"><span>管理员登录名</span><input name="login_name" required defaultValue="admin" autoComplete="username" disabled={action.busy} /></label>
           <label className="field">
             <span>管理员密码</span>
             <input name="password" type="password" required autoComplete="current-password" autoFocus
@@ -61,7 +63,7 @@ export default function Login({ onLogin, notice }: { onLogin: () => void; notice
           </button>
         </form>
         <button className="button button-secondary login-submit" type="button" disabled={action.busy || Boolean(passkeySupport())}
-          onClick={() => void action.run(() => loginPasskey('/api/login/passkey'), onLogin)}>使用 Passkey 登录</button>
+          onClick={() => void action.run(() => loginPasskey('/api/login/passkey'), onLogin)}>使用初始所有者 Passkey 登录</button>
         {passkeySupport() && <p className="helper">{passkeySupport()}</p>}
         <div className="login-hint"><Icon name="lock" size={13} />仅限管理员访问，使用部署时设置的密码。</div>
       </div>

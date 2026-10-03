@@ -19,8 +19,14 @@ export const size = (value: unknown) => number(value) === null ? '—' : bytes(v
 export const speed = (value: unknown) => number(value) === null ? '—' : `${bytes(value as number)}/秒`
 export const count = (value: unknown) => number(value) === null ? '—' : (value as number).toLocaleString('zh-CN')
 
-export function network(metrics: Metrics, field: NetworkField): number | null {
-  const interfaces = Object.values(metrics.network_interfaces ?? {})
+export function interfaceSelected(name: string, patterns = ''): boolean {
+  const entries = patterns.split(',').map(value => value.trim()).filter(Boolean)
+  const matches = (pattern: string) => new RegExp(`^${pattern.split('*').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(name)
+  return (!entries.some(pattern => !pattern.startsWith('!')) || entries.some(pattern => !pattern.startsWith('!') && matches(pattern))) && !entries.some(pattern => pattern.startsWith('!') && matches(pattern.slice(1)))
+}
+
+export function network(metrics: Metrics, field: NetworkField, patterns = ''): number | null {
+  const interfaces = Object.entries(metrics.network_interfaces ?? {}).filter(([name]) => interfaceSelected(name, patterns)).map(([, metrics]) => metrics)
   if (!interfaces.length || interfaces.some(item => number(item[field]) === null)) return null
   return interfaces.reduce((sum, item) => sum + item[field]!, 0)
 }
@@ -36,7 +42,7 @@ export function status(server: Server, unavailable = false) {
 }
 
 export function aggregate(servers: Server[], field: NetworkField, live = false) {
-  const values = servers.map(server => !live || fresh(server) ? network(server.latest_metrics, field) : null)
+  const values = servers.map(server => !live || fresh(server) ? network(server.latest_metrics, field, server.asset_settings?.network_interface) : null)
     .filter((value): value is number => value !== null)
   return { value: values.length ? values.reduce((sum, value) => sum + value, 0) : null, count: values.length }
 }

@@ -108,6 +108,7 @@ pub async fn create(
     let mut tx = state.pool.begin().await?;
     super::business::lock_server(&mut tx, server).await?;
     super::settings::require_enabled(&mut tx, server).await?;
+    crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let row = sqlx::query("SELECT capabilities,last_seen,dirty_at,EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) AS retiring FROM servers WHERE id=$1").bind(server).fetch_one(&mut *tx).await?;
     let capabilities: Value = row.get("capabilities");
     if !capabilities
@@ -131,7 +132,7 @@ pub async fn create(
             "设备离线，恢复连接后再执行运行时操作".into(),
         ));
     }
-    let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND module='singbox' AND result IS NULL)").bind(server).fetch_one(&mut *tx).await?;
+    let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND module='singbox' AND result IS NULL AND cancelled_at IS NULL AND reconciled_at IS NULL)").bind(server).fetch_one(&mut *tx).await?;
     if busy {
         return Err(ApiError::Conflict(
             "已有运行时操作等待确认，请等待设备回报".into(),
@@ -168,7 +169,7 @@ pub async fn create(
         }
     }
     sqlx::query("INSERT INTO runtime_operations(id,server_id,module,requested_at,spec) VALUES($1,$2,'singbox',$3,$4)").bind(request.id).bind(server).bind(now).bind(serde_json::to_value(&request).map_err(anyhow::Error::from)?).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM runtime_operations WHERE server_id=$1 AND result IS NOT NULL AND id NOT IN (SELECT id FROM runtime_operations WHERE server_id=$1 ORDER BY requested_at DESC,id DESC LIMIT 100)").bind(server).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM runtime_operations WHERE server_id=$1 AND automation_job_id IS NULL AND result IS NOT NULL AND id NOT IN (SELECT id FROM runtime_operations WHERE server_id=$1 ORDER BY requested_at DESC,id DESC LIMIT 100)").bind(server).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(request))
 }

@@ -5,6 +5,7 @@ import { time } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { Deployment } from '../../types'
 import './runtime-operations.css'
+import OperationsWorkflows from './OperationsWorkflows'
 
 type Operation = 'inspect' | 'restart' | 'retry_deployment'
 type Failure = 'expired' | 'interrupted' | 'module_unavailable' | 'target_changed' | 'retiring' | 'manifest_unavailable' | 'operation_failed'
@@ -55,5 +56,6 @@ export default function RuntimeOperations({ serverId, status, deploymentError, g
       {snapshot && <><p className="subtle">采集于 {time(snapshot.observed_at)} · 已应用版本 {snapshot.applied_revision ?? '—'} · {snapshot.healthy === null ? '尚无可检查的配置' : snapshot.healthy ? '健康检查通过' : '健康检查未通过'}</p><h4>{snapshot.logs_service_events ? '脱敏任务事件日志' : '脱敏服务日志'}</h4><p>{snapshot.logs_service_events ? '来自系统任务事件，不包含运行时标准输出。' : '来自实际服务输出。'}最多 100 条、64 KiB；正文与地址、凭据均隐藏，只展示时间、级别及事件分类。系统日志读取最近一小时，文件日志读取末尾窗口。</p>{!snapshot.logs_available ? <p>当前系统服务后端不支持读取日志，或读取失败。请在服务器本机查看服务日志。</p> : !snapshot.logs.length ? <p>近期窗口内没有可显示的服务日志。</p> : <div className="runtime-service-logs" role="log">{snapshot.logs.map((entry, index) => <div key={index}><time>{entry.timestamp ? time(entry.timestamp) : '时间未提供'}</time>{' · '}{levelNames[entry.level]}{' · '}{logNames[entry.kind]}</div>)}</div>}{snapshot.logs_truncated && <p className="subtle">日志已达到窗口上限，较早或过长的内容已截断。</p>}</>}
       {records.length > 0 && <details><summary>操作记录（最近 20 条）</summary><ul>{records.map(record => <li key={record.spec.id}>{time(record.spec.requested_at)} · {operationNames[record.spec.operation]} · {record.result ? record.result.error ? failureNames[record.result.error] : '已完成' : record.dispatched_at ? '等待设备结果' : '等待领取'}</li>)}</ul></details>}
     </>}
+    <OperationsWorkflows serverId={serverId} />
   </section>
 }

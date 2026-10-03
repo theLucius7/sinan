@@ -1001,6 +1001,17 @@ async fn signed_agent_versions_require_admin_or_live_enrollment_and_match_platfo
             .send()
             .await?
             .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        panel
+            .client
+            .get(&admin_url)
+            .header(header::COOKIE, &cookie)
+            .query(&[("token", token.as_str())])
+            .send()
+            .await?
+            .status(),
         StatusCode::BAD_REQUEST
     );
     assert_eq!(

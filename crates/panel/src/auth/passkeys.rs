@@ -41,7 +41,7 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    require_initial_admin(&state, &headers).await?;
     Ok(keys::reply(
         json!({"configuration":state.passkeys.info(), "keys":keys::list(&state.pool, ADMIN).await?}),
     ))
@@ -61,6 +61,7 @@ async fn register_start(
     headers: HeaderMap,
     Json(input): Json<Register>,
 ) -> ApiResult<Response> {
+    require_initial_admin(&state, &headers).await?;
     let proof = proof::prepare(
         &state,
         &headers,
@@ -92,7 +93,7 @@ async fn register_finish(
     headers: HeaderMap,
     Json(input): Json<FinishRegistration>,
 ) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    require_initial_admin(&state, &headers).await?;
     let _permit = keys::permit(&state, &headers, peer).await?;
     let session = security::session_hash(&headers)?;
     let pending: Ceremony<PendingRegistration> = keys::consume(
@@ -125,6 +126,7 @@ async fn remove(
     Path(id): Path<Uuid>,
     Json(input): Json<LoginRequest>,
 ) -> ApiResult<Response> {
+    require_initial_admin(&state, &headers).await?;
     let proof = proof::prepare(&state, &headers, peer, input).await?;
     let mut tx = state.pool.begin().await?;
     proof.lock(&mut tx).await?;
@@ -162,6 +164,21 @@ async fn login_finish(
     headers: HeaderMap,
     Json(input): Json<FinishAuthentication>,
 ) -> ApiResult<Response> {
+    let result = login_finish_inner(state.clone(), peer, headers, input).await;
+    if result.is_err()
+        && let Err(error)=sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('login','/api/login/passkey/finish',$1,$2,$3)")
+            .bind(json!({"factor":"passkey"})).bind(json!({"phase":"authentication-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await {
+            tracing::warn!(%error,"passkey denial audit failed");
+    }
+    result
+}
+
+async fn login_finish_inner(
+    state: AppState,
+    peer: SocketAddr,
+    headers: HeaderMap,
+    input: FinishAuthentication,
+) -> ApiResult<Response> {
     let _permit = keys::permit(&state, &headers, peer).await?;
     let pending: Ceremony<PendingAuthentication> = keys::consume(
         &state,
@@ -178,9 +195,8 @@ async fn login_finish(
         .await?;
     let token = random_token();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT id FROM admins WHERE id=1 FOR UPDATE")
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query("SELECT a.id FROM admins a JOIN administrator_profiles p ON p.admin_id=a.id WHERE a.id=1 AND p.enabled FOR UPDATE OF a,p")
+        .fetch_optional(&mut *tx).await?.ok_or(ApiError::Unauthorized)?;
     keys::authenticate(&mut tx, &pending, result).await?;
     let now = now_timestamp();
     sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
@@ -192,6 +208,16 @@ async fn login_finish(
         .bind(now + ADMIN_SESSION_SECONDS)
         .execute(&mut *tx)
         .await?;
+    sqlx::query(
+        "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3)",
+    )
+    .bind(hash_token(&token))
+    .bind(now)
+    .bind(now + 300)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES(1,'login','/api/login/passkey/finish',$1,$2,$3)")
+        .bind(json!({"factor":"passkey"})).bind(json!({"phase":"authenticated","success":true})).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;
     let mut response = keys::reply(json!({"id":1}));
     response.headers_mut().insert(
@@ -200,4 +226,13 @@ async fn login_finish(
     );
     keys::set_cookie(&state, &mut response, ADMIN_BINDING, "", 0)?;
     Ok(response)
+}
+
+async fn require_initial_admin(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
+    if require_admin(state, headers).await? != 1 {
+        return Err(ApiError::Forbidden(
+            "此入口管理初始所有者的 Passkey；其他管理员使用各自密码和二步验证".into(),
+        ));
+    }
+    Ok(())
 }

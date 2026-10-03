@@ -17,19 +17,19 @@ use uuid::Uuid;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct Balance {
     pub available: String,
     pub currency: String,
     pub queried_at: i64,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct CostRow {
     pub item: String,
     pub amount: String,
     pub currency: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct InstanceBill {
     pub month: String,
     pub queried_at: i64,
@@ -73,6 +73,8 @@ impl Cloud {
         }
     }
     pub(super) async fn balance(&self, account: &Account, now: i64) -> Result<Balance, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let value = self
             .costs_service(account)
             .call(
@@ -94,6 +96,8 @@ impl Cloud {
         r: &Resource,
         now: i64,
     ) -> Result<InstanceBill, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         tokio::time::timeout(
             std::time::Duration::from_secs(30),
             self.instance_bill_pages(account, r, now),

@@ -298,6 +298,7 @@ async fn migration_preflight_checks_resumable_diagnostic_jobs() {
         timeout_secs: 30,
         memory_max: Default::default(),
         tasks_max: Default::default(),
+        cpu_max_percent: Default::default(),
         cpu_weight: Default::default(),
         io_weight: Default::default(),
         oom_score_adjust: Default::default(),

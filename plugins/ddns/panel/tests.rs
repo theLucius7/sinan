@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use std::net::{IpAddr, Ipv4Addr};
 use uuid::Uuid;
 
+mod lifecycle;
 mod multicloud;
 mod provider;
 mod scheduling;
@@ -16,6 +17,11 @@ const TOKEN: &str = "TEST_ONLY_CLOUDFLARE_TOKEN";
 
 fn config() -> Config {
     Config {
+        address_source: model::AddressSource::Agent,
+        manual_ip: None,
+        credential_id: None,
+        interface_name: None,
+        account_id: None,
         provider: model::Provider::Cloudflare,
         line: String::new(),
         name: "测试规则".into(),

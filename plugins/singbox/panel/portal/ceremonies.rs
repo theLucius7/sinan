@@ -52,16 +52,54 @@ pub(super) async fn login_finish(
         PORTAL_BINDING,
     )
     .await?;
-    let result = state
+    let result = match state
         .passkeys
         .authentication(input.credential, &pending.state)
-        .await?;
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            if let Err(audit) = login_failure(&state, account).await {
+                tracing::warn!(%audit,"proxy login audit unavailable");
+            }
+            return Err(error);
+        }
+    };
     let mut tx = state.pool.begin().await?;
-    access::lock(&mut tx, account).await?;
+    let owner = access::lock(&mut tx, account).await?;
     keys::authenticate(&mut tx, &pending, result).await?;
     let token = access::issue(&mut tx, account).await?;
+    super::super::operations_workflows::event(
+        &mut tx,
+        None,
+        Some(owner.try_get("user_id")?),
+        "security_portal_login",
+        json!({"authentication":"passkey","result":"verified"}),
+    )
+    .await?;
     tx.commit().await?;
     access::logged_in(&state, &token)
+}
+
+async fn login_failure(state: &AppState, account: Uuid) -> ApiResult<()> {
+    let mut tx = state.pool.begin().await?;
+    let user: Option<i64> =
+        sqlx::query_scalar("SELECT user_id FROM singbox_portal_accounts WHERE account_id=$1")
+            .bind(account)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(user) = user {
+        super::super::operations_workflows::event(
+            &mut tx,
+            None,
+            Some(user),
+            "security_portal_login_failed",
+            json!({"stage":"passkey_verification","result":"rejected"}),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -175,6 +213,14 @@ pub(super) async fn register_finish(
     } else {
         None
     };
+    super::super::operations_workflows::event(
+        &mut tx,
+        None,
+        Some(row.try_get("user_id")?),
+        "security_portal_key_register",
+        json!({"activated":activate,"result":"verified"}),
+    )
+    .await?;
     tx.commit().await?;
     match token {
         Some(token) => access::logged_in(&state, &token),
@@ -191,7 +237,7 @@ pub(super) async fn remove(
     let _permit = keys::permit(&state, &headers, peer).await?;
     let hash = access::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
-    access::lock(&mut tx, account).await?;
+    let owner = access::lock(&mut tx, account).await?;
     access::session(&mut tx, account, &hash, true).await?;
     keys::lock(&mut tx, account).await?;
     let count: i64 =
@@ -220,6 +266,14 @@ pub(super) async fn remove(
         .bind(hash)
         .execute(&mut *tx)
         .await?;
+    super::super::operations_workflows::event(
+        &mut tx,
+        None,
+        Some(owner.try_get("user_id")?),
+        "security_portal_key_remove",
+        json!({"key_id":id,"other_sessions_revoked":true}),
+    )
+    .await?;
     tx.commit().await?;
     Ok(keys::reply(json!({"ok":true})))
 }

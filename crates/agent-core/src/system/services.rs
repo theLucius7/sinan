@@ -10,6 +10,7 @@ use tokio::time::timeout;
 mod logs;
 #[path = "services/runtime.rs"]
 mod runtime;
+mod terminals;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceBackend {
@@ -218,8 +219,121 @@ impl SystemServiceManager {
 }
 
 impl ServiceManager for SystemServiceManager {
+    fn retire_interactive_sessions(&self) -> BoxFuture<'_, ()> {
+        Box::pin(terminals::retire(self))
+    }
+
+    fn start<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(self.change("start", unit))
+    }
+    fn set_startup<'a>(&'a self, unit: &'a str, enabled: bool) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            ensure!(
+                self.backend == ServiceBackend::Systemd,
+                "startup configuration requires systemd"
+            );
+            self.change(if enabled { "enable" } else { "disable" }, unit)
+                .await
+        })
+    }
+    fn status_details<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, String> {
+        Box::pin(async move {
+            if self.backend == ServiceBackend::Systemd {
+                let result = self.call("show", unit, Some("LoadState,ActiveState,SubState,UnitFileState,Result,ExecMainStatus,MainPID,MemoryCurrent,CPUUsageNSec,User,Group")).await?;
+                ensure!(result.success, "service details failed: {}", result.stderr);
+                Ok(result.stdout)
+            } else {
+                Ok(format!("active={}", self.is_active(unit).await?))
+            }
+        })
+    }
+
     fn supports_runtime_checkpoint(&self) -> bool {
         cfg!(target_os = "linux") && self.backend == ServiceBackend::Systemd
+    }
+    fn preflight_access<'a>(&'a self, unit: &'a str) -> BoxFuture<'a, serde_json::Value> {
+        Box::pin(async move {
+            ensure!(
+                !unit.is_empty()
+                    && unit.len() <= 128
+                    && unit.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'-' | b'_' | b'@' | b'.')),
+                "invalid managed service inspection unit"
+            );
+            let (kind, program, args) = match self.backend {
+                ServiceBackend::Systemd => (
+                    "systemd",
+                    "systemctl",
+                    vec!["show".into(), "--property=Version,Features".into()],
+                ),
+                ServiceBackend::OpenRc => ("openrc", "rc-status", vec!["--all".into()]),
+                _ => {
+                    return Ok(
+                        serde_json::json!({"kind":"unsupported","available":false,"management_authorized":null}),
+                    );
+                }
+            };
+            let identity = self
+                .privileged
+                .execute_bounded(Path::new("id"), &["-u".into()], 3, 1024)
+                .await?;
+            let uid = if identity.output.success && !identity.timed_out && !identity.truncated {
+                identity.output.stdout.trim().parse::<u64>().ok()
+            } else {
+                None
+            };
+            let probe = self
+                .privileged
+                .execute_bounded(Path::new(program), &args, 5, 16 * 1024)
+                .await?;
+            let available = probe.output.success && !probe.timed_out && !probe.truncated;
+            let mut managed_pid: Option<u32> = None;
+            let mut account =
+                serde_json::json!({"known":false,"source":"runtime_service_account_not_observed"});
+            let mut load_state: Option<String> = None;
+            if available && self.backend == ServiceBackend::Systemd {
+                let details = self
+                    .privileged
+                    .execute_bounded(
+                        Path::new("systemctl"),
+                        &[
+                            "show".into(),
+                            "--property=LoadState,MainPID,User,Group,SupplementaryGroups".into(),
+                            "--".into(),
+                            unit.into(),
+                        ],
+                        5,
+                        4096,
+                    )
+                    .await?;
+                if details.output.success && !details.timed_out && !details.truncated {
+                    let properties: std::collections::BTreeMap<_, _> = details
+                        .output
+                        .stdout
+                        .lines()
+                        .filter_map(|line| line.split_once('='))
+                        .collect();
+                    managed_pid = properties
+                        .get("MainPID")
+                        .and_then(|value| value.parse::<u32>().ok())
+                        .filter(|pid| *pid > 0);
+                    load_state = properties.get("LoadState").map(|value| (*value).to_owned());
+                    if load_state.as_deref() == Some("loaded")
+                        && let Some(name) = properties.get("User")
+                        && let Some(group) = properties.get("Group")
+                        && let Some(supplementary) = properties.get("SupplementaryGroups")
+                    {
+                        account = serde_json::json!({"known":true,"name":if name.is_empty(){"root"}else{name},"group":group,"supplementary_groups":supplementary.split_whitespace().collect::<Vec<_>>(),"source":"loaded_systemd_unit_configuration","empty_account_semantics":"only_a_loaded_unit_with_an_observed_empty_account_field_has_systemd_default_root"});
+                    }
+                }
+            }
+            Ok(
+                serde_json::json!({"kind":kind,"available":available,"privileged_effective_uid":uid,
+                "managed_unit":unit,"managed_pid":managed_pid,"load_state":load_state,"runtime_account":account,
+                "management_authorized":if available && uid==Some(0){Some(true)}else{None},
+                "authorization_basis":"observed_privileged_effective_uid_0_and_connected_backend; no mutation attempted; later authorization may change"}),
+            )
+        })
     }
     fn runtime_instance<'a>(
         &'a self,
