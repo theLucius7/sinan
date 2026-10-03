@@ -297,10 +297,10 @@ class ChapterTests(unittest.TestCase):
             before = (root / "section-hardware_quality.json").read_bytes()
             write = report.write_atomic
 
-            def fail_one(path, data):
+            def fail_one(path, data, **arguments):
                 if path.name == "section-hardware_quality.json":
                     raise OSError("injected chapter write failure")
-                write(path, data)
+                write(path, data, **arguments)
 
             with mock.patch.object(report, "write_atomic", side_effect=fail_one):
                 with self.assertRaisesRegex(ValueError, "hardware_quality"):
