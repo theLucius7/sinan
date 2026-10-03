@@ -139,7 +139,7 @@ fn is_stale(sampled: Option<i64>, settings: &Value, now: i64) -> bool {
 }
 
 pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<Value> {
-    let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,latest_metrics,agent_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
+    let rows=sqlx::query("SELECT id,last_seen,last_heartbeat_at,NULLIF(metrics_sampled_at,0) AS metrics_sampled_at,latest_metrics,agent_settings,asset_settings FROM servers WHERE deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true' ORDER BY id").fetch_all(&state.pool).await?;
     let now = now_millis();
     let mut servers = Vec::with_capacity(rows.len());
     for row in rows {
@@ -156,7 +156,7 @@ pub(crate) async fn dashboard_live(state: &AppState, admin: bool) -> ApiResult<V
             metrics = serde_json::to_value(value.sample.metrics).map_err(anyhow::Error::from)?;
         }
         let last_seen: Option<i64> = row.get("last_seen");
-        servers.push(json!({"id":id,"last_seen":last_seen,"last_heartbeat_at":row.get::<Option<i64>,_>("last_heartbeat_at"),"online":last_seen.is_some_and(|seen|now/1000-seen<=60),"metrics_sampled_at":sampled,"metrics_received_at":received,"metrics_persisted_at":persisted,"metrics_stale":is_stale(sampled,&row.get("agent_settings"),now),"latest_metrics":if admin {metrics} else {crate::dashboard::public_metrics(&metrics)}}));
+        servers.push(json!({"id":id,"last_seen":last_seen,"last_heartbeat_at":row.get::<Option<i64>,_>("last_heartbeat_at"),"online":last_seen.is_some_and(|seen|now/1000-seen<=60),"metrics_sampled_at":sampled,"metrics_received_at":received,"metrics_persisted_at":persisted,"metrics_stale":is_stale(sampled,&row.get("agent_settings"),now),"latest_metrics":if admin {metrics} else {crate::dashboard::public_metrics_for_asset(&metrics,&row.get("asset_settings"))}}));
     }
     Ok(json!({"served_at":now,"public_view":!admin,"servers":servers}))
 }

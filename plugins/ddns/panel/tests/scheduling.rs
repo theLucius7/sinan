@@ -85,7 +85,7 @@ async fn scheduler_persists_success_and_does_not_repeat_unchanged_writes(
             .is_err()
     );
     worker::sync_with(&pool, id, false, &mock.client).await?;
-    assert_eq!(mock.data.lock().unwrap().requests.len(), 3);
+    assert_eq!(mock.data.lock().unwrap().requests.len(), 5);
     due(&pool, id).await?;
     worker::sync_with(&pool, id, false, &mock.client).await?;
     assert_eq!(load(&pool, id).await?.status, "unchanged");
@@ -156,7 +156,7 @@ async fn leases_exclude_parallel_work_block_edits_and_recover_after_expiry(
     );
     assert_ne!(first.is_ok(), second.is_ok());
     assert_eq!(mock.writes(), 1);
-    assert_eq!(mock.data.lock().unwrap().requests.len(), 3);
+    assert_eq!(mock.data.lock().unwrap().requests.len(), 5);
     assert_eq!(load(&pool, id).await?.lease_until, 0);
     Ok(())
 }
@@ -185,7 +185,7 @@ async fn rate_limit_backoff_survives_retries_without_exposing_response_or_losing
             .is_err()
     );
     worker::sync_with(&pool, id, false, &mock.client).await?;
-    assert_eq!(mock.data.lock().unwrap().requests.len(), 4);
+    assert_eq!(mock.data.lock().unwrap().requests.len(), 6);
     assert!(
         !model::view(&pool, current)
             .await?

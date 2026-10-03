@@ -118,7 +118,7 @@ export default function SubscriptionDialog({ user, format, onFormatChange, onClo
       </>}
       <section className="subscription-address" aria-label="订阅地址"><h3>订阅地址</h3>{link ? <code tabIndex={0}>{link}</code> : <p className="helper">获取成功后显示当前订阅地址。</p>}<button className="button button-secondary button-small" disabled={busy || !link || current?.status === 'format_unavailable'} onClick={() => void perform('address')}><Icon name="copy" size={15} />复制订阅地址</button></section>
       <section className="subscription-content" aria-label="配置内容"><h3>获取配置</h3><p className="helper">每次获取均重新检查当前授权、套餐和部署状态。预览、复制和下载只包含此用户的可用节点。</p><div className="subscription-actions"><button className="button button-secondary" disabled={busy || !ready} onClick={() => preview ? setPreview(false) : void perform('preview')}>{preview && ready ? '收起预览' : '预览配置'}</button><button className="button button-secondary" disabled={busy || !ready} onClick={() => void perform('copy')}><Icon name="copy" size={15} />复制配置</button><button className="button button-primary" disabled={busy || !ready} onClick={() => void perform('download')}><Icon name="down" size={15} />下载文件</button></div>{preview && ready && <textarea aria-label="配置预览" className="subscription-preview" readOnly spellCheck={false} value={current.content ?? ''} />}</section>
-      <p className="helper subscription-private"><Icon name="lock" size={14} />链接和配置包含此用户的连接凭据，请仅提供给此用户。</p>
+      <p className="helper subscription-private"><Icon name="lock" size={14} />链接和配置包含连接凭据，需代理写入权限及五分钟内的管理员再次验证；只读诊断仅显示授权和状态。请仅提供给此用户。</p>
     </div>
     <footer><button className="button button-danger" disabled={busy} onClick={onReset}>重置订阅链接</button><button className="button button-secondary" onClick={onClose}>完成</button></footer>
   </Modal>

@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod business_support;
 mod e2e_support;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
@@ -40,6 +41,21 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
         identity::enroll(&config, enrollment["token"].as_str().context("token")?).await?,
         server_id
     );
+    // This fixture explicitly enables only the independent read-only capability.
+    // No runtime deployment bypass is present in the production configuration.
+    let policy_path = config
+        .identity_dir
+        .parent()
+        .context("fixture Agent root")?
+        .join("fleet-policy.json");
+    fs::write(
+        &policy_path,
+        serde_json::to_vec(&sinan_protocol::fleet::AccessPolicy {
+            runtime_inspection: true,
+            ..Default::default()
+        })?,
+    )?;
+    fs::set_permissions(&policy_path, fs::Permissions::from_mode(0o600))?;
     let original_key = fs::read(config.identity_dir.join("device.key"))?;
     let agent = AgentTask::start(config.clone(), adapter.clone(), services.clone());
     eventually("authenticated agent telemetry", 10, || async {
@@ -125,6 +141,27 @@ async fn published_configuration_usage_and_lost_ack_survive_agent_restart(
             .await?,
         0
     );
+
+    // Pause the native transport while the controlled Agent fixture claims the
+    // two real typed requests. This prevents racing a mock service backend that
+    // does not implement system permission inspection. The reserved DNS and
+    // directory/service receipts are TEST_ONLY; no public DNS or host service
+    // permission is being accepted by this accounting/restart scenario.
+    agent.stop().await?;
+    eventually(
+        "Agent paused before controlled deployment preflight",
+        5,
+        || async { Ok(!config.status_socket.exists()) },
+    )
+    .await?;
+    business_support::deployment::prepare_with(
+        &panel.state,
+        &panel.client,
+        &panel.base,
+        &panel.cookie,
+    )
+    .await?;
+    let agent = AgentTask::start(config.clone(), adapter.clone(), services.clone());
 
     // Run the real publisher with its production debounce and real notification transport.
     eventually("debounced deployment applied over WebSocket", 15, || async {

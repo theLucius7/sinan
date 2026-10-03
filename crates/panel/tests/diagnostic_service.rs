@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 mod business_support;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 use anyhow::Result;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 async fn ready(panel: &TestPanel, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET static_info=static_info || '{\"os\":\"linux\"}'::jsonb,capabilities=$2,last_seen=$3 WHERE id=$1")
-        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes",sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
+        .bind(server).bind(json!(["diagnostic:nodequality","diagnostic:nodequality-modes",sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY]))
         .bind(sinan_protocol::now_timestamp()).execute(&panel.state.pool).await?;
     let binary = b"TEST_ONLY fixed diagnostic service fixture";
     let archive = release_fixture::archive("nodequality", binary)?;

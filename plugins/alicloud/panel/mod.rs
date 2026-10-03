@@ -6,11 +6,13 @@ mod model;
 mod notices;
 mod operations;
 mod power;
+mod security_groups;
 #[cfg(test)]
 mod tests;
 mod worker;
 
 pub use api::routes;
+pub(crate) use security_groups::routes as security_groups_routes;
 pub use worker::run;
 
 use crate::error::{ApiError, ApiResult};

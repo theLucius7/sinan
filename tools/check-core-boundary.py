@@ -13,6 +13,32 @@ CAMEL_PARTS = re.compile(r"_|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 # Exact operating-system/SQLite API spellings, scoped to their existing callers.
 # Mask only these expressions: a forbidden reference on the same line still fails.
 EXCEPTIONS = {
+    "src/system/jobs.rs": (
+        r'(?<=--property=)CPUQuota(?==)',
+        r'(?<=--property=)CPUQuotaPeriodSec(?==100ms")',
+    ),
+    "src/system/budgets.rs": (
+        r'(?<=\(")CPUQuota(?=", format!)',
+        r'(?<=\(")CPUQuotaPeriodSec(?=", "100ms"\.into\(\))',
+    ),
+    "src/system/tests.rs": (
+        r'(?<=CPUWeight,)CPUQuotaPerSecUSec(?=,IOWeight,OOMScoreAdjust")',
+        r'(?<=\(")CPUQuotaPerSecUSec(?=", "1s"\.into\(\))',
+    ),
+    "src/system/services.rs": (
+        r'(?<=CPUUsageNSec,)User(?=,Group")',
+        r'(?<=LoadState,MainPID,)User(?=,Group,SupplementaryGroups")',
+        r'properties\s*\.get\("User"\)',
+    ),
+    "src/system_network/certificates.rs": (
+        r'properties\s*\.get\("User"\)',
+    ),
+    "src/system_network/firewall.rs": (
+        r'(?<=WantedBy=)multi-user\.target(?=\\n")',
+    ),
+    "src/system_network/tunnel.rs": (
+        r'(?<=format!\(")UserKnownHostsFile(?==\{\}")',
+    ),
     "src/system/windows.rs": (
         r"\[Security\.Principal\.WindowsIdentity\]::GetCurrent\(\)\.User\b",
     ),
@@ -37,11 +63,14 @@ EXCEPTIONS = {
 
 def violations(relative, source):
     findings = []
-    for number, line in enumerate(source.splitlines(), 1):
-        if re.search(r"singbox|sing-box", line, re.IGNORECASE):
+    masked = source
+    for expression in EXCEPTIONS.get(relative, ()):
+        # Formatting can split an exact native expression across lines. Preserve
+        # every line break while masking only that expression's characters.
+        masked = re.sub(expression, lambda match: re.sub(r"[^\r\n]", " ", match.group()), masked)
+    for number, (original, line) in enumerate(zip(source.splitlines(), masked.splitlines()), 1):
+        if re.search(r"singbox|sing-box", original, re.IGNORECASE):
             findings.append((number, "runtime name"))
-        for expression in EXCEPTIONS.get(relative, ()):
-            line = re.sub(expression, "", line)
         for token in TOKENS.findall(line):
             parts = {part.lower() for part in CAMEL_PARTS.split(token)}
             banned = sorted(parts & FORBIDDEN)

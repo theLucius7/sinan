@@ -79,6 +79,8 @@ where
             "SELECT o.id,o.channel,o.message,o.attempts FROM notification_outbox o
              JOIN server_alert_events e ON e.id=o.event_id JOIN servers s ON s.id=e.server_id
              WHERE o.status='pending' AND o.next_attempt_at<=$1 AND s.deleted_at IS NULL AND o.channel=$5
+             AND NOT EXISTS(SELECT 1 FROM operations_maintenance WHERE s.id=ANY(targets) AND suppress_notifications AND starts_at<=$1 AND ends_at>$1)
+             AND NOT EXISTS(SELECT 1 FROM fleet_profiles p WHERE p.server_id=s.id AND p.lifecycle='maintenance' AND COALESCE(p.maintenance_from,0)<=$1 AND (p.maintenance_until IS NULL OR p.maintenance_until>$1))
              AND (e.category<>'offline' OR ($2 AND COALESCE(s.asset_settings->>'offline_notify','true')<>'false'))
              AND ((o.channel='telegram' AND $3) OR (o.channel='webhook' AND $4))
              AND NOT EXISTS(SELECT 1 FROM notification_outbox earlier WHERE earlier.event_id=o.event_id AND earlier.channel=o.channel AND earlier.id<o.id AND earlier.status='pending')

@@ -2682,6 +2682,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2748,10 +2749,10 @@ dependencies = [
  "libc",
  "rand 0.8.8",
  "reqwest",
- "rustls",
- "rustls-pki-types",
  "rusqlite",
  "rusqlite_migration",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2798,6 +2799,7 @@ dependencies = [
  "httpdate",
  "rand 0.8.8",
  "reqwest",
+ "ring",
  "rusqlite",
  "rust-embed",
  "rustls",
@@ -2816,12 +2818,15 @@ dependencies = [
  "tar",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite 0.28.0",
+ "toml",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "uuid",
  "webauthn-rs",
+ "webpki-roots 1.0.9",
  "x25519-dalek",
 ]
 

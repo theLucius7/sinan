@@ -192,6 +192,7 @@ impl DiagnosticPlugin for TcpQualityPlugin {
                 budget: DiagnosticResourceBudget {
                     memory_max: 64 * 1024 * 1024,
                     tasks_max: 32,
+                    cpu_max_percent: None,
                     cpu_weight: 10,
                     io_weight: 10,
                     oom_score_adjust: 500,

@@ -25,7 +25,7 @@ async fn fresh_resource(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResu
 }
 pub(super) async fn idle(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> ApiResult<()> {
     super::power::idle(tx, id).await?;
-    let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations WHERE resource_id=$1 AND status IN ('queued','running','uncertain'))")
+    let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations WHERE resource_id=$1 AND status IN ('queued','running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_security_group_operations WHERE resource_id=$1 AND status IN ('running','unknown'))")
         .bind(id).fetch_one(&mut **tx).await?;
     if active {
         return Err(ApiError::Conflict(

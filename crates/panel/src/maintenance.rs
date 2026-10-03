@@ -49,26 +49,42 @@ pub async fn run(state: AppState) {
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         poll.tick().await;
+        let mut healthy = true;
         if let Err(error) = crate::diagnostics::expire(&state).await {
+            healthy = false;
             tracing::error!(%error, "diagnostic expiry cleanup failed");
         }
         if let Err(error) =
             crate::server_assets::renew_due(&state.pool, sinan_protocol::now_timestamp()).await
         {
+            healthy = false;
             tracing::error!(%error, "server expiry renewal failed");
         }
         if let Err(error) =
             crate::auth::purge_expired_sessions(&state.pool, sinan_protocol::now_timestamp()).await
         {
+            healthy = false;
             tracing::error!(%error, "expired session cleanup failed");
         }
         let now = sinan_protocol::now_timestamp();
         if let Err(error) = crate::notifications::evaluate(&state.pool, state.started_at, now).await
         {
+            healthy = false;
             tracing::error!(%error, "server alert evaluation failed");
         }
         if let Err(error) = crate::notifications::dispatch(&state.pool, now).await {
+            healthy = false;
             tracing::error!(%error, "notification delivery failed");
+        }
+        if let Err(error) = crate::control_center::system::heartbeat(
+            &state.pool,
+            "maintenance",
+            if healthy { "healthy" } else { "failed" },
+            serde_json::json!({"source":"expiry-alert-delivery-cycle"}),
+        )
+        .await
+        {
+            tracing::warn!(%error,"maintenance heartbeat persistence failed");
         }
     }
 }

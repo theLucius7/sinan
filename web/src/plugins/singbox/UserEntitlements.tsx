@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../../api'
 import { Badge, ErrorNotice, Field, FormDialog, Loading } from '../../components'
 import { bytes } from '../../format'
 import { resourceWriteError, useAction, useResource } from '../../hooks'
 import type { ResourceState } from '../../hooks'
 import { assignmentRequestId, dateText, scheduleText, statusText } from './groupTypes'
 import type { Entitlement, PackageGroup, PolicyGroup, UserPolicies } from './groupTypes'
+import OperationReview from './OperationReview'
+import type { WorkflowOperation } from './OperationReview'
 
 const root = '/api/plugins/sing-box'
 export default function UserEntitlements({ id, entitlement, userError, refreshRevision, onChange }: { id: number; entitlement: ResourceState<Entitlement>; userError: () => string; refreshRevision: number; onChange: () => void }) {
@@ -18,6 +19,7 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
   const [packageChoice, setPackageChoice] = useState('')
   const [notice, setNotice] = useState('')
   const action = useAction()
+  const [operation, setOperation] = useState<WorkflowOperation | null>(null)
   useEffect(() => { if (assigned.data && !dirty.current) setSelected([...assigned.data.group_ids]) }, [assigned.data])
   useEffect(() => { const timer = window.setInterval(entitlement.reload, 15000); return () => window.clearInterval(timer) }, [entitlement.reload])
   const refresh = () => { policies.reload(); packages.reload(); assigned.reload(); entitlement.reload() }
@@ -28,11 +30,11 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
   const packageError = () => writeError() || (packageChoice && !packages.getCurrent()?.some(value => String(value.id) === packageChoice) ? '已选套餐组已不存在，请重新选择；当前分配草稿已保留。' : '')
   const savePolicies = () => {
     if (policyError()) return
-    void action.run(() => api(`${root}/users/${id}/policy-groups`, 'PUT', { group_ids: selected }), () => { dirty.current = false; assigned.reload(); onChange(); setNotice('策略组分配已保存。单独授权仍保留，设备应用配置后更新可用节点。') })
+    setOperation({ operation: 'policy_batch', user_ids: [id], group_ids: [...selected] })
   }
   const assign = () => {
     if (!assignment || !packageChoice || packageError()) return
-    void action.run(() => api(`${root}/users/${id}/package`, 'POST', { package_group_id: Number(packageChoice), request_id: assignment }), () => { setAssignment(null); entitlement.reload(); onChange(); setNotice('套餐已分配，按分配时刻计算有效期。本期历史用量没有清空。') })
+    setOperation({ operation: 'replace_package', user_id: id, package_group_id: Number(packageChoice) })
   }
   return <section className="panel">
     <div className="panel-heading"><h2>可用范围与套餐</h2><a className="text-button" href="#/plugins/sing-box/groups">管理策略与套餐</a></div>
@@ -57,5 +59,6 @@ export default function UserEntitlements({ id, entitlement, userError, refreshRe
       <p>此操作替换当前套餐，使用期限从现在重新计算，不是在原到期日上续加。本月已记录的流量不会清空。变更月度重置规则会重新按新规则统计当前周期。</p>
       <p className="helper">套餐与节点权限分别分配；仅分配套餐不会自动授予节点。</p>
     </FormDialog>}
+    {operation && <OperationReview request={operation} onClose={() => setOperation(null)} onApplied={() => { setOperation(null); setAssignment(null); dirty.current = false; assigned.reload(); entitlement.reload(); onChange(); setNotice('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。') }} />}
   </section>
 }

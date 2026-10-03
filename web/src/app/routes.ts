@@ -4,9 +4,9 @@ import { nodeRoute } from '../plugins/singbox/nodeRoute'
 import { resourceRoute } from '../plugins/singbox/resourceTypes'
 import type { ResourceKey } from '../plugins/singbox/resourceTypes'
 
-type ServerSection = 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns'
+type ServerSection = 'ip-info' | 'node-quality' | 'tcp-quality' | 'plugins' | 'ddns' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations'
 type SimplePage = 'singbox-overview' | 'servers' | 'statistics' | 'latency' | 'alicloud' | 'ddns'
-  | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'notifications' | 'security' | 'not-found'
+  | 'proxy-users' | 'groups' | 'plugins' | 'catalog' | 'settings' | 'notifications' | 'security' | 'fleet' | 'network-workbench' | 'network-configuration' | 'operations' | 'control-center' | 'not-found'
 
 export type AppRoute =
   | { page: 'dashboard'; serverId?: number }
@@ -17,6 +17,11 @@ export type AppRoute =
 
 const pages: Readonly<Record<string, SimplePage>> = {
   '/servers': 'servers',
+  '/fleet': 'fleet',
+  '/network-workbench': 'network-workbench',
+  '/network-configuration': 'network-configuration',
+  '/operations': 'operations',
+  '/system/control-center': 'control-center',
   '/plugins/sing-box': 'singbox-overview',
   '/statistics': 'statistics',
   '/latency': 'latency',
@@ -36,7 +41,7 @@ export function resolveRoute(path: string): AppRoute {
   const display = dashboardRoute(path)
   if (display) return { page: 'dashboard', ...display }
 
-  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(ip-info|node-quality|tcp-quality|plugins|ddns))?$/)
+  const server = path.match(/^\/servers\/([1-9]\d*)(?:\/(ip-info|node-quality|tcp-quality|plugins|ddns|fleet|network-workbench|network-configuration|operations))?$/)
   if (server && Number.isSafeInteger(Number(server[1]))) {
     return { page: 'server', serverId: Number(server[1]), section: server[2] as ServerSection | undefined }
   }

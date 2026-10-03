@@ -90,7 +90,13 @@ async fn runtime_extensions_upgrade_the_existing_installation_schema_without_rep
         sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
             .fetch_all(&pool)
             .await?;
-    assert_eq!(versions, (1..=48).collect::<Vec<_>>());
+    assert_eq!(
+        versions,
+        migrations
+            .iter()
+            .map(|migration| migration.version)
+            .collect::<Vec<_>>()
+    );
     let mut paused_spec = legacy_spec;
     paused_spec["enabled"] = json!(false);
     for (id, spec, enabled, revision) in [

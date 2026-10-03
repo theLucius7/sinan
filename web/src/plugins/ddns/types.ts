@@ -1,6 +1,7 @@
 export type DdnsConfig = {
   provider?: 'cloudflare' | 'tencent' | 'aliyun' | 'huawei'; line?: string
   name: string; server_id: number; zone_id: string; record_name: string; record_type: 'A' | 'AAAA'
+  address_source?: 'agent' | 'interface' | 'discovered' | 'manual'; manual_ip?: string | null; credential_id?: string | null; interface_name?: string | null; account_id?: string | null
   ttl: number; proxied: boolean; interval_secs: number; enabled: boolean; adopt_existing: boolean
 }
 export type DdnsRule = {
@@ -10,6 +11,10 @@ export type DdnsRule = {
   status: string; error_code: string | null; failures: number
 }
 const messages: Record<string, string> = {
+  source_unavailable: 'Agent 尚未提供所选网卡或公网发现来源，保留现有解析；请更新 Agent 或更换来源',
+  credential_unavailable: '凭据中心引用不可用、密钥缺失或字段不匹配，请检查 DNS 凭据及其提供方配置',
+  binding_changed: '来源绑定已迁移',
+  rolled_back: '已回退，自动同步已暂停', rollback_running: '正在回退', remote_changed: '远端记录已经变化，已拒绝覆盖，请重新核对', lease_lost: '执行权限或租约已失效，未继续修改', checked: '已读取提供方记录',
   submitted: '已提交，等待提供方生效', provider_pending: '提供方正在处理，等待下轮核对', ttl_not_supported: 'TTL 低于当前域名套餐支持的最小值',
   plugin_disabled: '此服务器的 DDNS 插件未启用，保留现有解析',
   pending: '等待首次同步', running: '正在同步', updated: '已更新解析', unchanged: '解析一致', waiting: '等待有效地址', error: '同步失败',
@@ -29,5 +34,5 @@ export function ddnsMessage(code: string | null | undefined) { return code ? Obj
 export const providers = { cloudflare: 'Cloudflare', tencent: '腾讯云 DNSPod', aliyun: '阿里云 DNS', huawei: '华为云 DNS' }
 export function ddnsWrite(config: DdnsConfig, token: string, revision?: number, key = '', secret = '') {
   const cloudflare = !config.provider || config.provider === 'cloudflare'
-  return { config: { ...config, ttl: config.proxied ? 1 : config.ttl }, ...(cloudflare && token.trim() ? { api_token: token.trim() } : {}), ...(!cloudflare && (key.trim() || secret.trim()) ? { access_key_id: key.trim(), access_key_secret: secret.trim() } : {}), ...(revision === undefined ? {} : { revision }) }
+  return { config: { ...config, ttl: config.proxied ? 1 : config.ttl }, ...(!config.credential_id && !config.account_id && cloudflare && token.trim() ? { api_token: token.trim() } : {}), ...(!config.credential_id && !config.account_id && !cloudflare && (key.trim() || secret.trim()) ? { access_key_id: key.trim(), access_key_secret: secret.trim() } : {}), ...(revision === undefined ? {} : { revision }) }
 }

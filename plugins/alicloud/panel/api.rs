@@ -82,6 +82,9 @@ struct AccountWrite {
     limit_gb: i64,
     access_key_id: Option<String>,
     access_key_secret: Option<String>,
+    credential_id: Option<Uuid>,
+    #[serde(default)]
+    legacy_credentials: bool,
     revision: Option<i64>,
 }
 impl AccountWrite {
@@ -96,25 +99,51 @@ impl AccountWrite {
         }
         Ok(())
     }
-    fn credentials(&self, previous: Option<&Account>) -> ApiResult<(String, String)> {
+    fn credentials(&self, previous: Option<&Account>) -> ApiResult<(String, String, Option<Uuid>)> {
         let key = self.access_key_id.as_deref().unwrap_or("").trim();
         let secret = self.access_key_secret.as_deref().unwrap_or("").trim();
+        if let Some(id) = self.credential_id {
+            if !key.is_empty() || !secret.is_empty() {
+                return Err(ApiError::BadRequest(
+                    "集中引用与旧明文密钥不能同时提交".into(),
+                ));
+            }
+            return Ok((String::new(), String::new(), Some(id)));
+        }
         if key.is_empty() && secret.is_empty() {
             if let Some(account) = previous {
+                if account.credential_id.is_some() && self.legacy_credentials {
+                    return Err(ApiError::BadRequest(
+                        "切换旧兼容模式必须明确提供独立密钥对".into(),
+                    ));
+                }
                 return Ok((
                     account.access_key_id.clone(),
                     account.access_key_secret.clone(),
+                    account.credential_id,
                 ));
             }
-        } else if crate::plugins::cloud_api::credential(key)
+        } else if self.legacy_credentials
+            && crate::plugins::cloud_api::credential(key)
             && crate::plugins::cloud_api::credential(secret)
         {
-            return Ok((key.into(), secret.into()));
+            return Ok((key.into(), secret.into(), None));
         }
         Err(ApiError::BadRequest(
-            "请同时填写有效的访问密钥 ID 和 Secret；编辑时同时留空保留".into(),
+            "请引用集中云凭据；只有明确选择旧兼容模式时才接收独立密钥对".into(),
         ))
     }
+}
+async fn validate_reference(state: &AppState, id: Option<Uuid>) -> ApiResult<()> {
+    if let Some(id) = id {
+        let available:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM credential_entries WHERE id=$1 AND kind='cloud' AND enabled)").bind(id).fetch_one(&state.pool).await?;
+        if !available {
+            return Err(ApiError::BadRequest(
+                "集中云凭据不存在、已停用或用途不符".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 async fn create_account(
     State(state): State<AppState>,
@@ -123,7 +152,8 @@ async fn create_account(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     auth::require_admin(&state, &headers).await?;
     input.validate()?;
-    let (key, secret) = input.credentials(None)?;
+    let (key, secret, credential) = input.credentials(None)?;
+    validate_reference(&state, credential).await?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(739104831)")
@@ -136,8 +166,8 @@ async fn create_account(
     if count >= 8 {
         return Err(ApiError::Conflict("最多登记 8 个云账号".into()));
     }
-    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,access_key_id,access_key_secret,enabled,auto_enabled,limit_gb) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO alicloud_accounts(id,name,site,access_key_id,access_key_secret,enabled,auto_enabled,limit_gb,credential_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({"id":id}))))
 }
@@ -154,12 +184,16 @@ async fn update_account(
     if input.revision != Some(previous.revision) {
         return Err(ApiError::Conflict("账号配置已变化，请刷新后重试".into()));
     }
-    let (key, secret) = input.credentials(Some(&previous))?;
+    let (key, secret, credential) = input.credentials(Some(&previous))?;
+    if credential != previous.credential_id {
+        validate_reference(&state, credential).await?;
+    }
     if input.site != previous.site
         || key != previous.access_key_id
         || secret != previous.access_key_secret
+        || credential != previous.credential_id
     {
-        let unresolved: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations o JOIN alicloud_resources r ON r.id=o.resource_id WHERE r.account_id=$1 AND o.status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_power_jobs j JOIN alicloud_resources r ON r.id=j.resource_id WHERE r.account_id=$1 AND j.status IN ('running','uncertain'))")
+        let unresolved: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM alicloud_operations o JOIN alicloud_resources r ON r.id=o.resource_id WHERE r.account_id=$1 AND o.status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_power_jobs j JOIN alicloud_resources r ON r.id=j.resource_id WHERE r.account_id=$1 AND j.status IN ('running','uncertain')) OR EXISTS(SELECT 1 FROM alicloud_security_group_operations o JOIN alicloud_resources r ON r.id=o.resource_id WHERE r.account_id=$1 AND o.status IN ('running','unknown'))")
             .bind(id).fetch_one(&mut *tx).await?;
         if unresolved {
             return Err(ApiError::Conflict(
@@ -169,8 +203,8 @@ async fn update_account(
         }
     }
     // Any edit invalidates queued authorization and cached billing evidence.
-    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
-        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET name=$2,site=$3,access_key_id=$4,access_key_secret=$5,enabled=$6,auto_enabled=$7,limit_gb=$8,credential_id=$9,revision=revision+1,bill=NULL,traffic=NULL,traffic_error=NULL,error_code=NULL,next_run_at=0,balance=NULL,balance_error=NULL,balance_next_at=0 WHERE id=$1")
+        .bind(id).bind(input.name.trim()).bind(input.site).bind(key).bind(secret).bind(input.enabled).bind(input.auto_enabled).bind(input.limit_gb).bind(credential).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_operations SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')")
         .bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
     sqlx::query("UPDATE alicloud_power_jobs SET status='cancelled',updated_at=$2 WHERE resource_id IN (SELECT id FROM alicloud_resources WHERE account_id=$1) AND status IN ('preview','queued')").bind(id).bind(sinan_protocol::now_timestamp()).execute(&mut *tx).await?;
@@ -199,7 +233,7 @@ async fn remove_account(
     if has_resources {
         return Err(ApiError::Conflict("请先移除该账号登记的云资源".into()));
     }
-    sqlx::query("UPDATE alicloud_accounts SET archived=true,enabled=false,auto_enabled=false,access_key_id='',access_key_secret='',bill=NULL,traffic=NULL,balance=NULL WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE alicloud_accounts SET archived=true,enabled=false,auto_enabled=false,access_key_id='',access_key_secret='',credential_id=NULL,bill=NULL,traffic=NULL,balance=NULL WHERE id=$1").bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -376,7 +410,7 @@ async fn refresh_resource(
     if !account.enabled {
         return Err(ApiError::Conflict("请先启用云账号".into()));
     }
-    let snapshot = Cloud::new()
+    let snapshot = Cloud::new(&state.pool)
         .map_err(failure)?
         .snapshot(&account, &resource)
         .await
@@ -409,7 +443,7 @@ async fn preview(
             id,
             input.target,
             input.revision,
-            &Cloud::new().map_err(failure)?,
+            &Cloud::new(&state.pool).map_err(failure)?,
         )
         .await?,
     ))

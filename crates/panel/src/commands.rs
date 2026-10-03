@@ -53,8 +53,8 @@ async fn command_server(
     .await?
     .ok_or(ApiError::NotFound)?;
     let retiring =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1)")
-            .bind(server)
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM server_retirements WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_profiles WHERE server_id=$1 AND (lifecycle IN ('draining','retired') OR (lifecycle='maintenance' AND COALESCE(maintenance_from,0)<=$2 AND (maintenance_until IS NULL OR maintenance_until>$2)))) OR EXISTS(SELECT 1 FROM operations_server_locks WHERE server_id=$1) OR EXISTS(SELECT 1 FROM fleet_operations WHERE server_id=$1 AND ((status IN ('dispatched','unknown') AND reconciled_at IS NULL) OR (status='queued' AND expires_at>$2))) OR EXISTS(SELECT 1 FROM operations_maintenance WHERE $1=ANY(targets) AND block_new_tasks AND starts_at<=$2 AND ends_at>$2)")
+            .bind(server).bind(now_timestamp())
             .fetch_one(&mut **tx)
             .await?;
     Ok((capabilities, retiring))
@@ -92,9 +92,12 @@ pub async fn create(
         return Err(ApiError::BadRequest("命令、超时或领取期限无效".into()));
     }
     let mut tx = state.pool.begin().await?;
+    crate::fleet::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let (capabilities, retiring) = command_server(&mut tx, server).await?;
     if retiring {
-        return Err(ApiError::Conflict("服务器正在退役，不能创建命令".into()));
+        return Err(ApiError::Conflict(
+            "服务器处于维护、退役或互斥运维操作中，暂不接收新命令".into(),
+        ));
     }
     if !capability(&capabilities, "command:execute") {
         return Err(ApiError::Conflict(

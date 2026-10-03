@@ -27,6 +27,12 @@ class CoreBoundaryTests(unittest.TestCase):
 
     def test_native_exceptions_are_expression_and_file_scoped(self):
         fixtures = {
+            "src/system/services.rs": '"--property=LoadState,MainPID,User,Group,SupplementaryGroups"; properties.get("User")',
+            "src/system/jobs.rs": '"--property=CPUQuota=20%"; "--property=CPUQuotaPeriodSec=100ms"',
+            "src/system/budgets.rs": '("CPUQuota", format!("{}%", limit)); ("CPUQuotaPeriodSec", "100ms".into())',
+            "src/system/tests.rs": '"--property=CPUWeight,CPUQuotaPerSecUSec,IOWeight,OOMScoreAdjust"; ("CPUQuotaPerSecUSec", "1s".into())',
+            "src/system_network/firewall.rs": '"WantedBy=multi-user.target\\n"',
+            "src/system_network/tunnel.rs": 'format!("UserKnownHostsFile={}",known.display())',
             "src/system/windows.rs": "[Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
             "src/system/deploy/native/windows.rs": "Get-LocalUser -Name $account; -UserId 'SYSTEM'; USER_RIGHTS",
             "src/system/deploy/native/unix.rs": '"/Users/example"; "UserShell"; <key>UserName</key>',
@@ -40,6 +46,24 @@ class CoreBoundaryTests(unittest.TestCase):
 
     def test_api_names_and_existing_account_terms_do_not_match_business(self):
         self.assertFalse(boundary.violations("src/config.rs", "url.username(); account_name; usershow; useradd"))
+
+    def test_network_native_exception_cannot_mask_repurposed_business_terms(self):
+        for source in ('"multi-user.target"', '"WantedBy=multi-user.target/proxy"',
+                       '"WantedBy=multi-user.target\\n"; user_id=1'):
+            self.assertTrue(boundary.violations("src/system_network/firewall.rs", source))
+        for source in ('UserKnownHostsFile', 'format!("UserKnownHostsFile=proxy-user")',
+                       'format!("UserKnownHostsFile={}", user_id)'):
+            self.assertTrue(boundary.violations("src/system_network/tunnel.rs", source))
+
+    def test_formatted_native_expression_preserves_lines_and_adjacent_business_rejection(self):
+        native = 'let account = properties\n    .get("User")\n    .map(String::as_str);'
+        relative = "src/system_network/certificates.rs"
+        self.assertFalse(boundary.violations(relative, native))
+        self.assertTrue(boundary.violations("src/transport.rs", native))
+        findings = boundary.violations(relative, native + '\nlet user_id = 1;')
+        self.assertEqual(findings, [(4, 'user')])
+        findings = boundary.violations(relative, native.replace('.get("User")', '.get("User"); user_id=1'))
+        self.assertEqual(findings, [(2, 'user')])
 
     def test_macos_account_path_exception_does_not_hide_business_routes(self):
         relative = "src/system/deploy/native/unix.rs"

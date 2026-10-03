@@ -109,7 +109,9 @@ class Panel:
         try:
             if was_running:
                 self.compose("stop", "panel", quiet=True)
-            self.private_write(destination / "environment", self.env_file.read_bytes())
+            environment_lines = self.env_file.read_text().splitlines(keepends=True)
+            protected = re.compile(r"^\s*(?:export\s+)?SINAN_CREDENTIAL_(?:KEYS|CURRENT_KEY)\s*=")
+            self.private_write(destination / "environment", "".join(line for line in environment_lines if not protected.match(line)).encode())
             for filename, arguments in [
                 ("database.dump", ["exec", "-T", "postgres", "pg_dump", "-U", "sinan", "-d", "sinan", "-Fc"]),
                 ("panel-data.tar.gz", ["run", "--rm", "--no-deps", "-T", "--pull", "never", "--entrypoint", "tar", "panel", "-C", "/data", "-czf", "-", "."]),
@@ -126,9 +128,25 @@ class Panel:
                         digest.update(chunk)
                 hashes[filename] = digest.hexdigest()
             revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True)
-            manifest = {"format": 1, "complete": True, "created_at": datetime.now(timezone.utc).isoformat(),
+            migrations = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+                "SELECT COALESCE(json_agg(json_build_object('version',version,'checksum',encode(checksum,'hex')) ORDER BY version)::text,'[]') FROM _sqlx_migrations WHERE success", quiet=True))
+            database_version = self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc", "SHOW server_version_num", quiet=True)
+            required_key_ids = []
+            if any(item["version"] == 54 for item in migrations):
+                required_key_ids = json.loads(self.compose("exec", "-T", "postgres", "psql", "-U", "sinan", "-d", "sinan", "-Atc",
+                    "SELECT COALESCE(json_agg(key_id)::text,'[]') FROM (SELECT DISTINCT key_id FROM credential_entries ORDER BY key_id) keys", quiet=True))
+            keyring_reference = next((line.partition("=")[2].strip().strip("\"'") for line in environment_lines if line.startswith("SINAN_BACKUP_KEYRING_REFERENCE=")), None)
+            if required_key_ids and not keyring_reference:
+                raise Failure("数据库含加密凭据，需在环境文件中配置 SINAN_BACKUP_KEYRING_REFERENCE 记录独立密钥环保管位置；主密钥不会写入备份。")
+            manifest = {"format": 2, "complete": True, "created_at": datetime.now(timezone.utc).isoformat(),
                         "project": self.args.project, "source_revision": revision.stdout.strip() if revision.returncode == 0 else None,
-                        "image": self.compose("images", "-q", "panel", quiet=True), "sha256": hashes}
+                        "image": self.compose("images", "-q", "panel", quiet=True), "sha256": hashes,
+                        "postgres_image": self.compose("images", "-q", "postgres", quiet=True),
+                        "postgres_version_num": int(database_version), "schema_migrations": migrations,
+                        "restore_scope": ["database", "panel_environment", "panel_data", "artifact_metadata"],
+                        "node_data_included": False, "dependency_manifest_sha256": [],
+                        "required_key_ids": required_key_ids, "keyring_reference": keyring_reference,
+                        "keyring_included": False}
             self.private_write(destination / "manifest.json", (json.dumps(manifest, indent=2) + "\n").encode())
         except BaseException:
             print(f"备份未完成：{destination}；请勿用于恢复。", file=sys.stderr)

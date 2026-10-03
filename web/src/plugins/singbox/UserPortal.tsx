@@ -9,7 +9,8 @@ import type { PasskeyEntry, PasskeyInfo } from '../../passkeys'
 import './portal.css'
 
 type View = { configuration: PasskeyInfo } & ({ authenticated: false } | {
-  authenticated: true; name: string; subscription_url: string; usage: { uplink: string; downlink: string }; keys: PasskeyEntry[]
+  authenticated: true; name: string; subscription_url: string; usage: { uplink: string; downlink: string }; keys: PasskeyEntry[];
+  subscription_status: { status: string; message: string; entitlement: { package_name: string | null; used_bytes: string; monthly_bytes: string | null; expires_at: number | null; next_reset: number | null } }
 })
 
 export default function UserPortal({ account, activation }: { account: string; activation?: string }) {
@@ -68,7 +69,8 @@ export default function UserPortal({ account, activation }: { account: string; a
       <section className="panel"><div className="panel-heading"><h1>{data.name}</h1><button className="text-button" onClick={reload}>刷新</button></div><div className="panel-body">
         <div className="user-usage"><div><span>受管节点累计上传</span><strong>{bytes(data.usage.uplink)}</strong></div><div><span>受管节点累计下载</span><strong>{bytes(data.usage.downlink)}</strong></div></div>
         <Field label="我的 sing-box 订阅"><CopyField text={data.subscription_url} label="复制我的订阅" /></Field>
-        <a className="button button-primary button-small" href={`${data.subscription_url}&download=true`}>下载订阅配置</a>
+        {data.subscription_status.status === 'ready' ? <a className="button button-primary button-small" href={`${data.subscription_url}&download=true`}>下载订阅配置</a> : <p className="notice" role="status">{data.subscription_status.message}</p>}
+        <dl className="group-details"><div><dt>套餐</dt><dd>{data.subscription_status.entitlement.package_name ?? '未设置套餐限制'}</dd></div><div><dt>本期已用 / 额度</dt><dd>{bytes(data.subscription_status.entitlement.used_bytes)} / {data.subscription_status.entitlement.monthly_bytes === null ? '不限量' : bytes(data.subscription_status.entitlement.monthly_bytes)}</dd></div><div><dt>到期</dt><dd>{data.subscription_status.entitlement.expires_at ? time(data.subscription_status.entitlement.expires_at) : '不限期'}</dd></div><div><dt>下次额度重置</dt><dd>{data.subscription_status.entitlement.next_reset ? time(data.subscription_status.entitlement.next_reset) : '不适用'}</dd></div></dl>
         <p className="helper">订阅检查当前授权与套餐状态。受管流量约每三十秒刷新；外部节点用量由提供方计量，已下载的外部凭据也由提供方控制。</p>
         <Field label="我的登录地址"><CopyField text={bookmark} label="复制我的登录地址" /></Field>
       </div></section>

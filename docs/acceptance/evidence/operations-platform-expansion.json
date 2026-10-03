@@ -1,0 +1,2270 @@
+{
+  "schema": 1,
+  "task": "operations-platform-expansion",
+  "recorded_at": "2026-10-03T22:31:24.779381+00:00",
+  "base_revision": "afe2f457cf93092e238d5ed6ba9bc40443e18e3d",
+  "source": {
+    "stage": "final_backup_fixture_repaired_frozen",
+    "source_files": 1311,
+    "sha256": "d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+    "algorithm": "sorted repository-relative path NUL raw bytes NUL; git tracked + nonignored untracked existing files; excludes docs, Markdown, CI files, licenses/git metadata and dist",
+    "base_revision": "afe2f457cf93092e238d5ed6ba9bc40443e18e3d",
+    "last_functional_change": [
+      "crates/panel/src/operations/backup_executor.rs",
+      "crates/panel/src/operations/backup_executor/connection.rs"
+    ],
+    "previous_ui_frozen_sha256": "f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b",
+    "python_unchanged_since_tested_source": "e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+    "prior_workspace_tested_sha256": "e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+    "rust_changes_after_prior_workspace_tests": "Only panel backup executor and connection helper; complete panel library and strict all-target panel Clippy are rerun",
+    "previous_backup_helper_sha256": "f622092bf33216cf285e59a1f60e4a5be2acda93c1866ec8a8c5e6ff2a5e2367"
+  },
+  "native": {
+    "sha256": "a520218c5f70a9a06c3ae34cf4831181666fc2e0d6eca855d9fbe902ae7d8c7d",
+    "source_label": "working-tree-sha256:d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+    "source_files": 1311,
+    "compiled_at": "2026-10-03T22:25:59.122839+00:00",
+    "profile": "dev",
+    "web_dist_files": 35,
+    "web_dist_sha256": "f48d051f339f4e392dab40737ce3aef83afc690ee017da18fb3bf117e0b0523f"
+  },
+  "new_migrations": [
+    {
+      "file": "crates/panel/migrations/0049_fleet_operations.sql",
+      "sha256": "e55ed21ce0a624cb4f2cb11a7b9a02f52108ffc664173fed726791d50bfbe7b9"
+    },
+    {
+      "file": "crates/panel/migrations/0050_network_workbench.sql",
+      "sha256": "c55bd47d843117c17b2ccb37b6f1f88f62b413d0cd09081c35883f4c99da667c"
+    },
+    {
+      "file": "crates/panel/migrations/0051_network_configuration.sql",
+      "sha256": "05af5c3c8b6df710db13cf29af315dd3cf4cb371de4bd5c7e70551d731f2cae3"
+    },
+    {
+      "file": "crates/panel/migrations/0052_singbox_operations.sql",
+      "sha256": "2e73417075d6067dcc3dfc409881219a9af67a112cc2aa8cc4f1f3570aec0ba7"
+    },
+    {
+      "file": "crates/panel/migrations/0053_operations_recovery.sql",
+      "sha256": "02781b517bc7a158e497e36865efcfcc35334c73096596e940d701a130689071"
+    },
+    {
+      "file": "crates/panel/migrations/0054_control_center.sql",
+      "sha256": "6727718fa34ae69bad5048c9993d8ed0033c2ab73ff032f1708d7d58cded4e2b"
+    },
+    {
+      "file": "crates/panel/migrations/0055_singbox_preflight.sql",
+      "sha256": "5a2b7c090585611912adb24f33bdd34f52bdc793d253da5ea860e4d1f5cec66e"
+    },
+    {
+      "file": "crates/panel/migrations/0056_network_server_migrations.sql",
+      "sha256": "7630688859e06cccf7a083bd8f0414149d0effa888fb49529ba2f0ef3a99f611"
+    },
+    {
+      "file": "crates/panel/migrations/0057_alicloud_security_groups.sql",
+      "sha256": "8d8197ef6c0741630027cde45a9ce494396468f8384ddea6c1461ee50eab0b82"
+    }
+  ],
+  "old_migrations_0001_0048_unchanged": true,
+  "checks": {
+    "format": "passed",
+    "workspace_all_targets_clippy_warnings_deny": "passed",
+    "core_boundary": "passed",
+    "git_diff": "passed",
+    "final_panel_all_targets_clippy_warnings_deny": "passed",
+    "final_backup_fixture_format": "passed",
+    "changed_local_markdown_links": {
+      "files": 22,
+      "missing": 0
+    }
+  },
+  "rust": {
+    "initial": {
+      "target_count": 119,
+      "passed": 1201,
+      "failed": 9,
+      "ignored": 25
+    },
+    "affected_runs": {
+      "affected-protocol.log": {
+        "target_count": 7,
+        "passed": 48,
+        "failed": 0,
+        "ignored": 0
+      },
+      "affected-core.log": {
+        "target_count": 7,
+        "passed": 320,
+        "failed": 0,
+        "ignored": 9
+      },
+      "affected-panel.log": {
+        "target_count": 10,
+        "passed": 406,
+        "failed": 0,
+        "ignored": 1
+      }
+    },
+    "final": {
+      "target_count": 119,
+      "passed": 1216,
+      "failed": 0,
+      "ignored": 25
+    },
+    "additional_example_targets": {
+      "crates/protocol/examples/ci-fixture-sign.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    "counting": "Latest affected result replaces the complete original target; repeated tests are not added. Workspace default suite includes doc-test groups; additional all-target example groups are listed separately.",
+    "targets": {
+      "crates/adapter-ipquality/src/lib.rs": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-nodequality/src/lib.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-nodequality/tests/diagnostic.rs": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-sdk/src/lib.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-singbox/src/lib.rs": {
+        "passed": 22,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/adapter-singbox/tests/adapter.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-singbox/tests/runtime.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/adapter-tcpquality/src/lib.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/adapter-tcpquality/tests/diagnostic.rs": {
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent/src/main.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent/tests/monitor_only.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/src/lib.rs": {
+        "passed": 264,
+        "failed": 0,
+        "ignored": 9
+      },
+      "crates/agent-core/tests/artifacts.rs": {
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/tests/identity.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/tests/reconcile.rs": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/tests/services.rs": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/tests/usage.rs": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/agent-core/tests/usage_bounds.rs": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/compiler/src/lib.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/compiler/tests/compilation.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/compiler/tests/external_client.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/compiler/tests/modern_protocols.rs": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 2
+      },
+      "crates/compiler/tests/node_transports.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/compiler/tests/ordered_native.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/compiler/tests/ordered_paths.rs": {
+        "passed": 10,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/compiler/tests/paths.rs": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/compiler/tests/relay_protocol_boundary.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/compiler/tests/relays.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/src/lib.rs": {
+        "passed": 363,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/src/main.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/accounting.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/acme_runtime.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/tests/agent_updates.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/alicloud.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/auth_security.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/business.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/command_lifecycle.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/command_result_bounds.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/command_retirement.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/control_center.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/control_center_search.rs": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/ddns.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/deployment_preflight.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/diagnostic_end_to_end.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/diagnostic_sections.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/diagnostic_service.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/diagnostics.rs": {
+        "passed": 23,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/end_to_end.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/exchange_rates.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/external_node_access.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/foundation.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/frontend.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/ip_addresses.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/latency_tasks.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/mixed_path_runtime.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 2
+      },
+      "crates/panel/tests/mixed_paths.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/modern_protocols.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/network_configuration.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/network_server_migrations.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/node_advanced_settings.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/node_catalog.rs": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/node_ip_queries.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/node_ports.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/node_settings.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/notification_channels.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/notification_migration.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/notification_rules.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/ordered_paths.rs": {
+        "passed": 19,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/ordered_subscription_sources.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/passkeys.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/tests/platform_artifacts.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/plugin_business.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/tests/pr151_compatibility.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/probe_authorization.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/probe_leases.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/probe_support.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/protocol_runtime.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/tests/proxy_resources.rs": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/reality.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 1
+      },
+      "crates/panel/tests/releases.rs": {
+        "passed": 21,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/retirement.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/runtime_control.rs": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/runtime_migration.rs": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/runtime_operations.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/runtime_validations.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/server_assets.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/server_operations.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/server_setup.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/server_traffic.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/singbox_groups.rs": {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/source_workbench.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/statistics.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/subscription_preview.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/subscription_reset.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/subscription_sources.rs": {
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/tasks.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/tcpquality_plugin.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/telemetry.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/telemetry_history.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/panel/tests/telemetry_live.rs": {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/src/lib.rs": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/tests/probe_authorization.rs": {
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/tests/probe_leases.rs": {
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/tests/release.rs": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/tests/runtime_control.rs": {
+        "passed": 9,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/protocol/tests/wire.rs": {
+        "passed": 13,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/tcp-probe/src/lib.rs": {
+        "passed": 25,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/tcp-probe/src/main.rs": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "crates/tcp-probe/tests/cli.rs": {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_adapter_ipquality": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_adapter_nodequality": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_adapter_sdk": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_adapter_singbox": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_adapter_tcpquality": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_agent_core": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_compiler": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_panel": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_protocol": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      },
+      "doc:sinan_tcp_probe": {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    "corrected_targets": {
+      "crates/agent-core/src/lib.rs": {
+        "before": {
+          "passed": 263,
+          "failed": 1,
+          "ignored": 9
+        },
+        "after": {
+          "passed": 264,
+          "failed": 0,
+          "ignored": 9
+        }
+      },
+      "crates/panel/src/lib.rs": {
+        "before": {
+          "passed": 356,
+          "failed": 1,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 363,
+          "failed": 0,
+          "ignored": 0
+        }
+      },
+      "crates/panel/tests/alicloud.rs": {
+        "before": {
+          "passed": 4,
+          "failed": 2,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        }
+      },
+      "crates/panel/tests/foundation.rs": {
+        "before": {
+          "passed": 7,
+          "failed": 1,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        }
+      },
+      "crates/panel/tests/frontend.rs": {
+        "before": {
+          "passed": 0,
+          "failed": 1,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      },
+      "crates/panel/tests/ordered_subscription_sources.rs": {
+        "before": {
+          "passed": 7,
+          "failed": 1,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        }
+      },
+      "crates/panel/tests/plugin_business.rs": {
+        "before": {
+          "passed": 7,
+          "failed": 1,
+          "ignored": 1
+        },
+        "after": {
+          "passed": 8,
+          "failed": 0,
+          "ignored": 1
+        }
+      },
+      "crates/protocol/src/lib.rs": {
+        "before": {
+          "passed": 7,
+          "failed": 1,
+          "ignored": 0
+        },
+        "after": {
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        }
+      }
+    },
+    "default_ignored": [
+      {
+        "test": "health::tests::obfuscated_quic_health_checks_certificate_and_custom_alpn",
+        "reason": "requires OpenSSL and official sing-box 1.14.2 in SINAN_TEST_UPSTREAM; runs only on ephemeral loopback ports"
+      },
+      {
+        "test": "real_check_stats_cumulative_reads_and_reload_generation",
+        "reason": "Requires exact upstream runtime built with with_v2ray_api; set SINAN_TEST_SINGBOX and run --ignored"
+      },
+      {
+        "test": "fleet::runtime_permissions::tests::actual_runtime_identity_cannot_read_root_only_certificate_directory",
+        "reason": "requires Linux root, Python 3 and a non-root NSS account 65534 for actual identity transition"
+      },
+      {
+        "test": "system::cleanup::acceptance::real_systemd_diagnostic_cancellation_confirms_process_and_private_mount_cleanup",
+        "reason": "requires root, Linux cgroup v2, systemd, flock and private tmpfs mounts on a dedicated test node"
+      },
+      {
+        "test": "system::jobs::lock_tests::real_systemd_diagnostic_lock_blocks_unprivileged_open_and_preserves_held_inode",
+        "reason": "requires Linux, Python 3, flock, and root"
+      },
+      {
+        "test": "system::jobs::tests::budgets::real_systemd_diagnostic_resource_budget_restricts_memory_and_children",
+        "reason": "requires Linux cgroup v2, a running systemd system manager, Python 3, and root"
+      },
+      {
+        "test": "system::jobs::tests::queued::real_systemd_diagnostic_queued_start_stays_running_until_executed",
+        "reason": "requires Linux, a running systemd system manager, and root to create isolated transient services"
+      },
+      {
+        "test": "system::jobs::tests::real_systemd_diagnostic_jobs_survive_manager_recreation_and_enforce_timeout",
+        "reason": "requires Linux, a running systemd system manager, and root to create isolated transient services"
+      },
+      {
+        "test": "system::jobs::tests::real_systemd_diagnostic_preflight_reads_resources_and_enforces_exclusive_execution",
+        "reason": "requires Linux cgroup v2, root, flock, and a running systemd system manager"
+      },
+      {
+        "test": "system::syscall_protection::tests::acceptance::real_systemd_swap_syscalls_are_denied_before_payload_and_inherited",
+        "reason": "requires explicit disposable guest opt-in, Linux/root/systemd, Python 3, and no inherited seccomp filter"
+      },
+      {
+        "test": "tasks::probes::tests::icmp_measures_real_ipv4_and_ipv6_loopback",
+        "reason": "requires the platform ICMP tool and permission to send IPv4/IPv6 loopback echoes"
+      },
+      {
+        "test": "upstream_runtime_accepts_compiled_server_and_client",
+        "reason": "requires an upstream v1.14.2 binary with with_v2ray_api; set SINAN_TEST_SINGBOX"
+      },
+      {
+        "test": "official_runtime_accepts_protocol_settings",
+        "reason": "requires the official v1.14.2 binary in SINAN_TEST_UPSTREAM; checks protocol fields without the optional accounting extension"
+      },
+      {
+        "test": "upstream_accepts_every_protocol_and_acme_provider",
+        "reason": "requires upstream v1.14.2 with QUIC, ACME, Naive and V2Ray API; set SINAN_TEST_SINGBOX"
+      },
+      {
+        "test": "official_runtime_accepts_all_transports_and_both_relay_formats",
+        "reason": "requires official sing-box 1.14.2 in SINAN_TEST_UPSTREAM; parses configs without connecting to external hosts"
+      },
+      {
+        "test": "exact_native_checks_three_and_four_hops_acceptances_and_legacy_bytes",
+        "reason": "requires exact sing-box 1.14.2 with full observed feature tags and a private evidence directory"
+      },
+      {
+        "test": "official_runtime_checks_imported_protocols_and_nested_paths",
+        "reason": "requires the official v1.14.2 binary in SINAN_TEST_UPSTREAM; native structure checks do not prove a working mixed path"
+      },
+      {
+        "test": "pinned_native_runtime_accepts_entry_exit_and_client_configs",
+        "reason": "requires the pinned upstream binary in SINAN_GROUPS_RUNTIME"
+      },
+      {
+        "test": "actual_challenges_persistence_and_expired_certificate_renewal",
+        "reason": "requires local Pebble and fixed runtime; run tools/acme-smoke.py"
+      },
+      {
+        "test": "clash_delay_checks_the_compiled_path_and_fails_when_external_middle_stops",
+        "reason": "requires official v1.14.2, OpenSSL, Python and exclusive loopback port 18086; proves native Clash path validation, not distributed Agent acceptance"
+      },
+      {
+        "test": "external_middle_hop_carries_tcp_udp_and_never_bypasses_a_stopped_hop",
+        "reason": "requires SINAN_TEST_UPSTREAM=official v1.14.2, OpenSSL and isolated loopback ports; excludes unavailable official accounting extension"
+      },
+      {
+        "test": "virtual_authenticator_browser_roundtrip",
+        "reason": "requires Bun, Playwright and Chromium with a virtual WebAuthn authenticator; run explicitly against the isolated test database"
+      },
+      {
+        "test": "imported_subscription_keeps_real_connection_authorization_and_counters_after_migration",
+        "reason": "Requires pinned real sing-box 1.14.2 and openssl on a dedicated test node; set SINAN_TEST_SINGBOX"
+      },
+      {
+        "test": "all_protocols_authenticate_account_and_revoke_with_real_runtime",
+        "reason": "requires openssl and upstream v1.14.2 with Naive, QUIC, ACME and V2Ray API; set SINAN_TEST_SINGBOX"
+      },
+      {
+        "test": "panel_reality_keys_match_upstream_generated_key_format",
+        "reason": "Requires PostgreSQL and SINAN_TEST_SINGBOX pointing to an upstream runtime; run --ignored"
+      }
+    ],
+    "validated_source_sha256": "d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+    "prior_workspace_final": {
+      "target_count": 119,
+      "passed": 1210,
+      "failed": 0,
+      "ignored": 25
+    },
+    "backup_executor_iteration": {
+      "functional_source_sha256": "f622092bf33216cf285e59a1f60e4a5be2acda93c1866ec8a8c5e6ff2a5e2367",
+      "complete_panel_library": {
+        "passed": 362,
+        "failed": 1,
+        "ignored": 0,
+        "methods": 363
+      },
+      "failure": "New inline-PEM fixture incorrectly used SQLx file-path constructor; production inline rejection preserved. Only fixture changed to ssl_client_key_from_pem.",
+      "fixture_repaired_source_sha256": "d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+      "helper_supplement": {
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0,
+        "filtered_out": 357
+      },
+      "strict_panel_all_targets_clippy": "passed",
+      "counting": "Complete panel result replaced previous 357-method target; single failed method replaced by successful corrected-fixture result. Five already passing helper methods are repeated, not added."
+    },
+    "prior_workspace_validated_source_sha256": "e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+    "final_validation_scope": "Final changes only affect panel backup executor/connection helper. Complete panel library was rerun, then only the corrected fixture/helper was supplemented; prior validated unaffected workspace target results retained."
+  },
+  "frontend": {
+    "passed": 173,
+    "failed": 0,
+    "assertions": 2286,
+    "test_files": 31,
+    "typescript": "passed",
+    "vite": "passed",
+    "build_warning": "existing main chunk exceeds 500 KiB",
+    "actual_test_invocations": 5,
+    "actual_build_invocations": 7,
+    "final_dist_files": 35,
+    "dist_hash_algorithm": "sorted path relative to web/dist NUL bytes NUL",
+    "dist_sha256": "f48d051f339f4e392dab40737ce3aef83afc690ee017da18fb3bf117e0b0523f",
+    "last_affected_build": "CSS-only grid/control sizing repair; TypeScript and Vite passed; unchanged Bun inputs were not rerun",
+    "source": {
+      "built_at": "2026-10-03T21:38:13.102498+00:00",
+      "command_number": 12,
+      "command": "bun run build",
+      "exit_code": 0,
+      "test_commands": 5,
+      "build_commands": 7,
+      "dist_files": 35,
+      "dist_digest": "f48d051f339f4e392dab40737ce3aef83afc690ee017da18fb3bf117e0b0523f",
+      "dist_digest_algorithm": "SHA-256 over sorted paths relative to web/dist: UTF-8 path + NUL + raw bytes + NUL",
+      "source_files": 293,
+      "source_digest": "eaeaf4c46e9342c2b1b61ab6de006959bc485beb9ac25b3682f98b6a1af2823e",
+      "source_digest_algorithm": "SHA-256 over sorted paths relative to web: UTF-8 path + NUL + raw bytes + NUL; src/tests/package/lock/tsconfig/vite",
+      "main_js": [
+        "assets/index-Dm8TKP2b.js"
+      ]
+    }
+  },
+  "python": {
+    "tests_discovery": {
+      "executed": 201,
+      "passed": 176,
+      "skipped": 25,
+      "skipped_methods": 24,
+      "skipped_classes": 1,
+      "resource_warning": "error",
+      "skipped_cases": [
+        {
+          "test": "test_direct_unprivileged_entry_refuses_before_sudo_or_installation (test_bootstrap.BootstrapTests.test_direct_unprivileged_entry_refuses_before_sudo_or_installation)",
+          "reason": "'unprivileged bootstrap entry test requires root to drop privileges'"
+        },
+        {
+          "test": "test_protected_operator_root_is_accepted_and_symlink_refused (test_bootstrap.BootstrapTests.test_protected_operator_root_is_accepted_and_symlink_refused)",
+          "reason": "'root-owned trust file test requires container root'"
+        },
+        {
+          "test": "setUpClass (test_bootstrap.StandaloneBootstrapTests)",
+          "reason": "'standalone bootstrap requires privileged root access; sudo is unavailable'"
+        },
+        {
+          "test": "test_agent_native_calls_require_current_success_and_reject_failed_launch (test_bootstrap_powershell.PowerShellBootstrapTests.test_agent_native_calls_require_current_success_and_reject_failed_launch)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_canonical_manifest_rejects_metadata_installer_and_duplicate_path_tampering (test_bootstrap_powershell.PowerShellBootstrapTests.test_canonical_manifest_rejects_metadata_installer_and_duplicate_path_tampering)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_download_bounds_and_panel_redirects_and_numeric_version_selection (test_bootstrap_powershell.PowerShellBootstrapTests.test_download_bounds_and_panel_redirects_and_numeric_version_selection)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_github_mirror_never_uses_panel_or_ip_origin (test_bootstrap_powershell.PowerShellBootstrapTests.test_github_mirror_never_uses_panel_or_ip_origin)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_native_enrollment_command_preserves_token_with_option_prefix (test_bootstrap_powershell.PowerShellBootstrapTests.test_native_enrollment_command_preserves_token_with_option_prefix)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_non_executable_verifier_cannot_reuse_a_previous_success_exit (test_bootstrap_powershell.PowerShellBootstrapTests.test_non_executable_verifier_cannot_reuse_a_previous_success_exit)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_origin_and_github_redirect_allowlists (test_bootstrap_powershell.PowerShellBootstrapTests.test_origin_and_github_redirect_allowlists)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_partial_enrollment_reuses_same_key_and_rejects_mismatched_or_activated_identity (test_bootstrap_powershell.PowerShellBootstrapTests.test_partial_enrollment_reuses_same_key_and_rejects_mismatched_or_activated_identity)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_previous_windows_agent_reads_reference_file_and_rejects_path_escape (test_bootstrap_powershell.PowerShellBootstrapTests.test_previous_windows_agent_reads_reference_file_and_rejects_path_escape)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_real_verifier_rejects_bad_signature_and_can_continue_to_the_correct_root (test_bootstrap_powershell.PowerShellBootstrapTests.test_real_verifier_rejects_bad_signature_and_can_continue_to_the_correct_root)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_rust_launcher_quote_recovers_all_arguments_without_smart_quote_injection (test_bootstrap_powershell.PowerShellBootstrapTests.test_rust_launcher_quote_recovers_all_arguments_without_smart_quote_injection)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_signed_native_manifest_validates_exact_version_and_all_targets (test_bootstrap_powershell.PowerShellBootstrapTests.test_signed_native_manifest_validates_exact_version_and_all_targets)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_unknown_root_and_modified_signed_bytes_are_rejected (test_bootstrap_powershell.PowerShellBootstrapTests.test_unknown_root_and_modified_signed_bytes_are_rejected)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_windows_architecture_uses_native_os_under_wow64 (test_bootstrap_powershell.PowerShellBootstrapTests.test_windows_architecture_uses_native_os_under_wow64)",
+          "reason": "'requires pwsh and minisign; native service install is separate'"
+        },
+        {
+          "test": "test_installer_accepts_exact_signed_gnu_identity (test_release.ReleaseTests.test_installer_accepts_exact_signed_gnu_identity)",
+          "reason": "'GNU Agent prefix requires root on a GNU/glibc host'"
+        },
+        {
+          "test": "test_installer_accepts_exact_signed_musl_identity (test_release.ReleaseTests.test_installer_accepts_exact_signed_musl_identity)",
+          "reason": "'real installer prefix requires isolated Linux container root'"
+        },
+        {
+          "test": "test_installer_accepts_signed_raw_and_passes_role_binding (test_release.ReleaseTests.test_installer_accepts_signed_raw_and_passes_role_binding)",
+          "reason": "'real installer prefix requires isolated Linux container root'"
+        },
+        {
+          "test": "test_installer_refuses_unbounded_body_at_signed_size (test_release.ReleaseTests.test_installer_refuses_unbounded_body_at_signed_size)",
+          "reason": "'real installer prefix requires isolated Linux container root'"
+        },
+        {
+          "test": "test_installer_refuses_writable_execution_parent_before_agent_execution (test_release.ReleaseTests.test_installer_refuses_writable_execution_parent_before_agent_execution)",
+          "reason": "'protected executable staging test requires root'"
+        },
+        {
+          "test": "test_missing_preloaded_agent_never_falls_back_to_panel (test_release.ReleaseTests.test_missing_preloaded_agent_never_falls_back_to_panel)",
+          "reason": "'real installer prefix requires isolated Linux container root'"
+        },
+        {
+          "test": "test_optimized_installer_refuses_tampered_raw_without_execution (test_release.ReleaseTests.test_optimized_installer_refuses_tampered_raw_without_execution)",
+          "reason": "'real installer prefix requires isolated Linux container root'"
+        },
+        {
+          "test": "test_real_native_musl_payload_is_signed_and_verified_with_complete_provenance (test_tcp_probe_native_bundle.NativeBundleTests.test_real_native_musl_payload_is_signed_and_verified_with_complete_provenance)",
+          "reason": "'native build is exercised by the artifact matrix'"
+        }
+      ]
+    },
+    "operations_recovery_cli": {
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "recovery-python-material-tests.log",
+      "resource_warning": "error"
+    },
+    "source_sha256": {
+      "scripts/recovery.py": "b787562f38821d99f9c64afea5fad743b9369921f40f8721b87d5ddd47627d29",
+      "scripts/node-backup.py": "0193e9a48b71683e56ae194cf846b0212303212187ed6da748d9464a152b38db",
+      "scripts/observe-panel.py": "cbd19a6e9565654d5bec1130178a5131b52f33b01a344ffe6ebc2355c3af6fa9",
+      "scripts/panel.py": "0ebfb88b06a9e50bbbda5a9e49cf9df3d570c54cd1b7c5ba451aa6ed8f3b497b",
+      "scripts/test-recovery.py": "ff9c198b0b7fdab648059799cc82ed6676df35bd3143449b87fe9ab29e53baba",
+      "scripts/test-operations-clis.py": "ddc713b8ce79fed5c5c0f1fd96f311600adc7a6795f482c6017e570424a01d3f",
+      "Dockerfile": "42488fd55508f01de99df3772ce6ebe445ea99efb99ea1660c760f9f57f9a484"
+    },
+    "validated_source_sha256": "e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac"
+  },
+  "actual_root_identity": {
+    "source_sha256": "4475dbb2ea2585286458fc6cebc8901569a86aff1d8f809644fb8c2baa540b1e",
+    "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+    "image": "sha256:a7098e3c99d67252e8a406c206154f887547b165728b91ebbdce639eb1804228",
+    "network": "none",
+    "root_uid": 0,
+    "capabilities": [
+      "SETUID",
+      "SETGID"
+    ],
+    "read_only_mounts": true,
+    "production_calls": false,
+    "default_ignored_count_unchanged": true,
+    "distinct_case_count": 1,
+    "repeated_for_final_source_binary": true,
+    "registered_test": "fleet::runtime_permissions::tests::actual_runtime_identity_cannot_read_root_only_certificate_directory",
+    "exit": 0,
+    "passed": true,
+    "executed_test_count": 1,
+    "completed_at": "2026-10-03T21:31:22.991532+00:00",
+    "owned_wrapper_removed": true,
+    "owned_executable_copy_removed": true,
+    "owned_container_removed": true
+  },
+  "browser": {
+    "started": "2026-10-03T21:32:00.970Z",
+    "finished": "2026-10-03T21:43:12.162Z",
+    "browser": "151.0.7922.173",
+    "passed": 16,
+    "failed": 0,
+    "results": [
+      {
+        "name": "live-panel-embeds-latest-dist",
+        "result": "passed",
+        "evidence": {
+          "entry": "/assets/index-Dm8TKP2b.js",
+          "sha256": "0fe705d2f178335d3acca4d35b6ebbe9f526b4ca3ef31e3b963172c8927b84b5",
+          "distSha256": "f48d051f339f4e392dab40737ce3aef83afc690ee017da18fb3bf117e0b0523f",
+          "distFiles": 35,
+          "actualFilesMatched": 35,
+          "assets": [
+            {
+              "file": "assets/Alicloud-B6JmVJn3.js",
+              "sha256": "6f9f01c83b97dbfc44b8f3935150cfac745b53e307243096fa767d262a1f6e4b",
+              "bytes": 43811
+            },
+            {
+              "file": "assets/Alicloud-E31sYXs0.css",
+              "sha256": "6b1a338a42b62aad7d72a6d38aa0013a94464b5cbd75987a10005c9a5b467c8a",
+              "bytes": 1877
+            },
+            {
+              "file": "assets/ControlCenter-m2ZPBteJ.js",
+              "sha256": "fda0f5e3a8c7bebe6d7f65ff1abc64a3ace71c9202f9b892399063e48487f6f0",
+              "bytes": 25020
+            },
+            {
+              "file": "assets/Ddns-CkhL-CqE.css",
+              "sha256": "a9d1ca0dd56dbeb0440430b87e8a95941862cf0e26a6b372468ffbc409fcc8ed",
+              "bytes": 1490
+            },
+            {
+              "file": "assets/Ddns-yT2tfMMQ.js",
+              "sha256": "59a7317921f6db728c1f563e7d5fd2ee9b81af3d19c7adb0d48ec15afc8183a9",
+              "bytes": 49626
+            },
+            {
+              "file": "assets/FleetOperations-AONMcNpv.css",
+              "sha256": "c73e4190a3466dc76dcbadd1f8862ebb5a3c238e835e3b724e4592f6783082ed",
+              "bytes": 1331
+            },
+            {
+              "file": "assets/FleetOperations-DECkN94N.js",
+              "sha256": "ede7e9aea8fd44dfb470900c1d958023891bb322ce1eb5b4a079540f8aee5720",
+              "bytes": 57011
+            },
+            {
+              "file": "assets/FormDraftToolbar-CnhGdL9O.js",
+              "sha256": "39f19fc25edc4ef449ef7d3b830266eeb52edeefed2bcaf98bf45539c93340a3",
+              "bytes": 944
+            },
+            {
+              "file": "assets/NetworkConfiguration-DBdKW-Oy.js",
+              "sha256": "5cfba048fc9dde04f3e5b08d7b446fc719d4df24232954d5328c526d88aa0d4e",
+              "bytes": 42424
+            },
+            {
+              "file": "assets/NetworkConfiguration-Kj7Lm4l_.css",
+              "sha256": "67f8c50b0c10648bbe469acb79adbbb9216e6f0600d483d43311ecb79f54aaa5",
+              "bytes": 2162
+            },
+            {
+              "file": "assets/NetworkWorkbench-BfxzBrYK.css",
+              "sha256": "5da0263c8f46c70f1d7e91cd20e44bb00d3a12a3b8a9a00868804d850b86e453",
+              "bytes": 2014
+            },
+            {
+              "file": "assets/NetworkWorkbench-C9oZk8lK.js",
+              "sha256": "973444c1bb03b3a75cb2ab26e4ddc0bef8b6ae834756db0249034d867c6321f7",
+              "bytes": 37340
+            },
+            {
+              "file": "assets/OperationsPage-C4SuYTu1.css",
+              "sha256": "be489d8fbcc9d7001fe75e81b83de7820627a5d50b90d9c15f13ed0d365853b1",
+              "bytes": 2966
+            },
+            {
+              "file": "assets/OperationsPage-CyTwBJOH.js",
+              "sha256": "affa7e86ac3380bc78b89a6d2020bb4cdc6c8dabe79215263a2ab89fad3d4008",
+              "bytes": 83640
+            },
+            {
+              "file": "assets/ServerDisplay-BPROctth.js",
+              "sha256": "5e4db4d39b85700fa13f9c0a488b834f6f6f600211c4661fb1fd12c79a303709",
+              "bytes": 56984
+            },
+            {
+              "file": "assets/ServerDisplay-DGgkEUkp.css",
+              "sha256": "8063fff03f8e794058d59a1bc53590b2cacc057b9f7ca225c6597e6584f11d95",
+              "bytes": 26280
+            },
+            {
+              "file": "assets/UserPortal-BafGpQ2H.js",
+              "sha256": "17826fc9ced4cecb87fa02a69c8235b6f5fbeae24df1038d5429ababf34b1014",
+              "bytes": 7100
+            },
+            {
+              "file": "assets/UserPortal-DE_HviZN.css",
+              "sha256": "24a2272bddb66286c276b799a196a447319aa35d6268bdfa3cf20a2a55217563",
+              "bytes": 420
+            },
+            {
+              "file": "assets/index-Dm8TKP2b.js",
+              "sha256": "0fe705d2f178335d3acca4d35b6ebbe9f526b4ca3ef31e3b963172c8927b84b5",
+              "bytes": 786066
+            },
+            {
+              "file": "assets/index-rU5ATcVV.css",
+              "sha256": "a95e407a5b608b20d0d178ce8caddb0ae213ff0b8e12aab2fbea84654e5cf144",
+              "bytes": 79245
+            },
+            {
+              "file": "display-icons/os-alma.svg",
+              "sha256": "c8b1686f341a1ed3e3c9638f396539e50334f0c7e11fd4a5a7d1b286686d636d",
+              "bytes": 5190
+            },
+            {
+              "file": "display-icons/os-alpine.webp",
+              "sha256": "25c7dd641ef59d4cc6355672a4d8f6f3368d6c98e848e6cf1c99c7d521b386bf",
+              "bytes": 2200
+            },
+            {
+              "file": "display-icons/os-arch.svg",
+              "sha256": "9605f694e3fd91c1329c246cbe5ed1105e13ca39928569e23f2c6993fc2ed463",
+              "bytes": 915
+            },
+            {
+              "file": "display-icons/os-centos.svg",
+              "sha256": "22364a4fe637a35a829cbc92c2bd6f3ce912b47aedb7e64c59714c63d9ceeba9",
+              "bytes": 1634
+            },
+            {
+              "file": "display-icons/os-debian.svg",
+              "sha256": "ea5542edfa154f61e1eded2f7ad1b161e64735fb421d6831e478772f85dd7cde",
+              "bytes": 5828
+            },
+            {
+              "file": "display-icons/os-fedora.svg",
+              "sha256": "08dacee944d8472123c96d5fa7041512c53f2b9969c81bac798c46b9ffc40227",
+              "bytes": 1682
+            },
+            {
+              "file": "display-icons/os-gentoo.svg",
+              "sha256": "6fd85109e4873b62d8b49615a0981337e0b58ac250c185c85dfedac2bafabf23",
+              "bytes": 3430
+            },
+            {
+              "file": "display-icons/os-macos.svg",
+              "sha256": "3de3719e3bc9f696ac964b15c703d972cecd712d1c13fc85a800c92e4dd5fedb",
+              "bytes": 725
+            },
+            {
+              "file": "display-icons/os-nix.svg",
+              "sha256": "2a5d3e942d5db27c4f33ec21601c458f869d18d53e831422027a8a4828da3784",
+              "bytes": 915
+            },
+            {
+              "file": "display-icons/os-rocky.svg",
+              "sha256": "bfc0bdb756bc06ee977480cfcc28adc32980aded075de0d46f11b0dbc83447f1",
+              "bytes": 411
+            },
+            {
+              "file": "display-icons/os-ubuntu.svg",
+              "sha256": "edd92d1b8239902f3001fabfdb3c479ed2f8036186a03c5b21b61227345e0d4f",
+              "bytes": 2652
+            },
+            {
+              "file": "display-icons/os-unknown.svg",
+              "sha256": "986825609c5a3bfc8aa20b6468119246ff8e3b787a6c329186d83ac98051dc14",
+              "bytes": 300
+            },
+            {
+              "file": "display-icons/os-windows.svg",
+              "sha256": "0f6b74d8d8ede1ec0e454b3c6fcdfba65fbe989af9a49ad4ff0c498f4dc3afbb",
+              "bytes": 179
+            },
+            {
+              "file": "index.html",
+              "sha256": "f7ebd64bc96d1eed3d7be23518e96af645129fd769c11129efcab91277e73f99",
+              "bytes": 552
+            },
+            {
+              "file": "notices/NodeFlare.txt",
+              "sha256": "1a3a2e3d60f2a46379bae01ee1e95b8150635126f0f62c5723dc73fe545106d6",
+              "bytes": 1379
+            }
+          ]
+        },
+        "artifact": {
+          "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+          "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+        }
+      },
+      {
+        "name": "owner-login-and-new-navigation",
+        "result": "passed",
+        "evidence": {
+          "newNavigationEntries": 5
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "new-module-pages-load",
+        "result": "passed",
+        "evidence": {
+          "pages": 5,
+          "systemHealth": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "same-server-context-across-modules",
+        "result": "passed",
+        "evidence": {
+          "serverId": 1,
+          "modules": 4,
+          "targetsNotExpanded": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "search-favorites-recent-and-keyboard",
+        "result": "passed",
+        "evidence": {
+          "keyboard": true,
+          "favorite": true,
+          "resultNavigation": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "saved-form-draft-and-leave-protection",
+        "result": "passed",
+        "evidence": {
+          "persistedBasicDraft": true,
+          "internalNavigationWarning": true,
+          "rejectedNavigationPreserved": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "fleet-asset-cas-stale-rejection-and-retained-draft",
+        "result": "passed",
+        "evidence": {
+          "serverId": 1,
+          "actualRestStaleStatus": 409,
+          "actualUiStaleStatus": 409,
+          "remoteValuePreserved": true,
+          "failedInputRetained": true,
+          "draftRestored": true,
+          "authorityExcludedFromDraft": true,
+          "leaveRejected": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "network-target-filters-safe-draft-and-leave-protection",
+        "result": "passed",
+        "evidence": {
+          "filters": [
+            "region",
+            "carrier-case-insensitive",
+            "purpose-combined"
+          ],
+          "sourceRetained": 1,
+          "safeFieldsOnly": true,
+          "requestDataExcluded": true,
+          "draftRestored": true,
+          "leaveRejected": true,
+          "actualRunsSubmitted": 0
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "reauthentication-denial-wrong-password-retry",
+        "result": "passed",
+        "evidence": {
+          "actualExpiredProof": true,
+          "passwordFailureKeptSession": true,
+          "retriedAfterProof": true,
+          "tokenRevoked": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "appearance-and-preference-concurrent-edit",
+        "result": "passed",
+        "evidence": {
+          "theme": "dark",
+          "density": "compact",
+          "staleEditRejected": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "tool-security-exact-version-metadata-and-mobile",
+        "result": "passed",
+        "evidence": {
+          "lockedDependencyVersions": 429,
+          "initialRisk": "unknown",
+          "provenance": "workspace-Cargo.lock-snapshot",
+          "automaticUpgrade": false,
+          "mobileWidth": 320
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "mobile-320px-new-pages-and-dialog",
+        "result": "passed",
+        "evidence": [
+          {
+            "hash": "/fleet",
+            "viewport": 320,
+            "body": 320,
+            "document": 320
+          },
+          {
+            "hash": "/network-workbench",
+            "viewport": 320,
+            "body": 320,
+            "document": 320
+          },
+          {
+            "hash": "/network-configuration",
+            "viewport": 320,
+            "body": 320,
+            "document": 320
+          },
+          {
+            "hash": "/operations",
+            "viewport": 320,
+            "body": 320,
+            "document": 320
+          },
+          {
+            "hash": "/system/control-center",
+            "viewport": 320,
+            "body": 320,
+            "document": 320
+          },
+          {
+            "mobileProofDialogFits": true,
+            "canceledOperationUnsubmitted": true
+          }
+        ],
+        "artifact": {
+          "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+          "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+        }
+      },
+      {
+        "name": "scoped-viewer-read-only-and-hidden-navigation",
+        "result": "passed",
+        "evidence": {
+          "scopedServerCount": 1,
+          "serverMutationsDisabled": true,
+          "ownerControlsHidden": true,
+          "unrelatedSearchHidden": true
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "hetzner-cloud-only-read-only-scoped-mobile",
+        "result": "passed",
+        "evidence": {
+          "explicitProvider": "hetzner",
+          "remoteWrites": false,
+          "billing": false,
+          "unrelatedAggregatesNotFetched": true,
+          "mobileWidth": 320
+        },
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        }
+      },
+      {
+        "name": "fleet-scoped-read-only-and-absent-agent-capability-controls",
+        "result": "passed",
+        "evidence": {
+          "scopedServers": 1,
+          "readOnlyAssetLifecycleCostEnrollment": true,
+          "serviceWriteOptionsDisabled": true,
+          "configAndTransferWriteDisabled": true,
+          "terminalCredentialsDisabled": true,
+          "ownerMissingAgentCapabilityDisabled": true,
+          "actualDeviceWorkSubmitted": 0
+        },
+        "artifact": {
+          "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+          "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+        }
+      },
+      {
+        "name": "no-browser-crash-or-backend-500",
+        "result": "passed",
+        "evidence": {
+          "scriptErrors": 0,
+          "backendServerErrors": 0
+        },
+        "artifact": {
+          "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+          "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+        }
+      }
+    ],
+    "failures": [],
+    "iterations": [
+      {
+        "passed": 14,
+        "failed": 2,
+        "artifact": {
+          "native_sha256": "3fe5b436aec86e4732d6adb1f9759b56ff265f3bb62249dbbafdab68594dcde1",
+          "source_label": "working-tree-sha256:e1c349182adead18276324bb7a6cc09686fa99051520ac2bd593fe43a969d0ac",
+          "dist_sha256": "e2d78c103817a9507b1c388022d4cbca53a27704f46a85e4dde320914566dcd7"
+        },
+        "failures": [
+          {
+            "name": "mobile-320px-new-pages-and-dialog",
+            "error": "page /network-workbench overflow 663 > 320"
+          },
+          {
+            "name": "fleet-scoped-read-only-and-absent-agent-capability-controls",
+            "error": "read-only fleet enabled service action start"
+          }
+        ],
+        "note": "One actual narrow-screen grid regression; one Playwright option-state fixture correction, verified against native DOM."
+      },
+      {
+        "passed": 4,
+        "failed": 0,
+        "checked_cases": [
+          "live-panel-embeds-latest-dist",
+          "mobile-320px-new-pages-and-dialog",
+          "fleet-scoped-read-only-and-absent-agent-capability-controls",
+          "no-browser-crash-or-backend-500"
+        ],
+        "artifact": {
+          "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+          "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+        },
+        "failures": []
+      }
+    ],
+    "last_run": {
+      "passed": 4,
+      "failed": 0,
+      "checked_cases": [
+        "live-panel-embeds-latest-dist",
+        "mobile-320px-new-pages-and-dialog",
+        "fleet-scoped-read-only-and-absent-agent-capability-controls",
+        "no-browser-crash-or-backend-500"
+      ],
+      "artifact": {
+        "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+        "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b"
+      },
+      "failures": []
+    },
+    "scriptErrors": [],
+    "serverErrors": [],
+    "limitations": [
+      "No production cloud/DNS/certificate changes, real Agent workload, or external notification delivery were exercised.",
+      "Previously passed scopes retain their recorded native/source identity; CSS iteration reran every affected mobile/dialog scope, Fleet native disabled controls, all embedded files, and browser/server error checks."
+    ],
+    "screenshots": [
+      {
+        "path": "docs/acceptance/evidence/operations-platform/mobile-control-center.png",
+        "sha256": "97aa2c18a29e4256f21f1d877b0c455e1765d04c7c5d30bbadbf64a212ba5720",
+        "bytes": 42841,
+        "visual_inspection": "passed"
+      },
+      {
+        "path": "docs/acceptance/evidence/operations-platform/mobile-network-workbench.png",
+        "sha256": "0f903798d492102857fe06d82991dc2d87cd3c642f7eb532041c57e83bad97a4",
+        "bytes": 153426,
+        "visual_inspection": "passed"
+      }
+    ],
+    "cleanup": {
+      "owned_panel_pid": 85475,
+      "owned_panel_stopped": true,
+      "database": "sinan_browser",
+      "owned_database_absent": true,
+      "shared_postgresql_retained": true,
+      "owned_private_data_removed": true,
+      "private_fixture_scripts_pid_raw_log_base_removed": [
+        "browser-smoke.cjs",
+        "seed-browser-fixture.py",
+        "browser-fixture.json",
+        "browser-summary-base.json",
+        "browser-layout-preflight.json",
+        "browser-panel.log",
+        "browser-panel.pid",
+        "browser-runtime.json"
+      ],
+      "retained_evidence": [
+        "browser-summary.json",
+        "browser-mobile-control-center.png",
+        "browser-mobile-network-workbench.png"
+      ]
+    }
+  },
+  "actual_backup_recovery": {
+    "status": "passed",
+    "failed_actual_executor": {
+      "native_sha256": "5c8d4958c423e4972b0fb870b5bb621262103be4d1791691cbaf61e474eecafe",
+      "source_label": "working-tree-sha256:f2e0b5d141aa7edd44ebbb44a8b452b5332ac05f9059a84b2824f0c75ec0864b",
+      "completion_receipt": false,
+      "cause": "libpq environment PGDATABASE does not expand connection URI; default local socket attempted"
+    },
+    "actual_same_image_uid_probe": {
+      "environment_uri_exit": 1,
+      "explicit_dbname_exit": 0,
+      "fixture_only": true
+    },
+    "final_actual_panel_executor": {
+      "passed": true,
+      "source_native_sha256": "a520218c5f70a9a06c3ae34cf4831181666fc2e0d6eca855d9fbe902ae7d8c7d",
+      "source_label": "working-tree-sha256:d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+      "runtime_image": "sha256:67eb5e9edcc0514a4491acf327805cbe7eaaecef5699293ce029afee9b6bd079",
+      "runtime_image_scope": "Test-only native compatibility shim, not production Docker build.",
+      "scheduled_complete_backup": true,
+      "two_target_backup_once_per_job": {
+        "target_count": 2,
+        "panel_execution_count": 1,
+        "shared_real_receipt": true,
+        "actual_agent_actions": false
+      },
+      "pg_export_snapshot_pg_dump_age_independent_decrypt": true,
+      "encrypted_storage_sha256": "8a096fddeff2250e59bf49ca5a90593a95f85a5505ca15af0d0bd4288756c028",
+      "exact_source_sha384_migration_pairing_count": 57,
+      "keyring_included": false,
+      "master_key_or_nested_backups_in_archive": false,
+      "enabled_and_disabled_credentials_authenticated": true,
+      "pg_dump_version": "pg_dump (PostgreSQL) 16.15 (Debian 16.15-1.pgdg12+2)",
+      "age_version": "1.1.1",
+      "all_latest_embedded_assets": {
+        "actual_files_matched": 35,
+        "native_sha256": "a520218c5f70a9a06c3ae34cf4831181666fc2e0d6eca855d9fbe902ae7d8c7d",
+        "files": [
+          {
+            "path": "assets/Alicloud-B6JmVJn3.js",
+            "sha256": "6f9f01c83b97dbfc44b8f3935150cfac745b53e307243096fa767d262a1f6e4b",
+            "bytes": 43811
+          },
+          {
+            "path": "assets/Alicloud-E31sYXs0.css",
+            "sha256": "6b1a338a42b62aad7d72a6d38aa0013a94464b5cbd75987a10005c9a5b467c8a",
+            "bytes": 1877
+          },
+          {
+            "path": "assets/ControlCenter-m2ZPBteJ.js",
+            "sha256": "fda0f5e3a8c7bebe6d7f65ff1abc64a3ace71c9202f9b892399063e48487f6f0",
+            "bytes": 25020
+          },
+          {
+            "path": "assets/Ddns-CkhL-CqE.css",
+            "sha256": "a9d1ca0dd56dbeb0440430b87e8a95941862cf0e26a6b372468ffbc409fcc8ed",
+            "bytes": 1490
+          },
+          {
+            "path": "assets/Ddns-yT2tfMMQ.js",
+            "sha256": "59a7317921f6db728c1f563e7d5fd2ee9b81af3d19c7adb0d48ec15afc8183a9",
+            "bytes": 49626
+          },
+          {
+            "path": "assets/FleetOperations-AONMcNpv.css",
+            "sha256": "c73e4190a3466dc76dcbadd1f8862ebb5a3c238e835e3b724e4592f6783082ed",
+            "bytes": 1331
+          },
+          {
+            "path": "assets/FleetOperations-DECkN94N.js",
+            "sha256": "ede7e9aea8fd44dfb470900c1d958023891bb322ce1eb5b4a079540f8aee5720",
+            "bytes": 57011
+          },
+          {
+            "path": "assets/FormDraftToolbar-CnhGdL9O.js",
+            "sha256": "39f19fc25edc4ef449ef7d3b830266eeb52edeefed2bcaf98bf45539c93340a3",
+            "bytes": 944
+          },
+          {
+            "path": "assets/NetworkConfiguration-DBdKW-Oy.js",
+            "sha256": "5cfba048fc9dde04f3e5b08d7b446fc719d4df24232954d5328c526d88aa0d4e",
+            "bytes": 42424
+          },
+          {
+            "path": "assets/NetworkConfiguration-Kj7Lm4l_.css",
+            "sha256": "67f8c50b0c10648bbe469acb79adbbb9216e6f0600d483d43311ecb79f54aaa5",
+            "bytes": 2162
+          },
+          {
+            "path": "assets/NetworkWorkbench-BfxzBrYK.css",
+            "sha256": "5da0263c8f46c70f1d7e91cd20e44bb00d3a12a3b8a9a00868804d850b86e453",
+            "bytes": 2014
+          },
+          {
+            "path": "assets/NetworkWorkbench-C9oZk8lK.js",
+            "sha256": "973444c1bb03b3a75cb2ab26e4ddc0bef8b6ae834756db0249034d867c6321f7",
+            "bytes": 37340
+          },
+          {
+            "path": "assets/OperationsPage-C4SuYTu1.css",
+            "sha256": "be489d8fbcc9d7001fe75e81b83de7820627a5d50b90d9c15f13ed0d365853b1",
+            "bytes": 2966
+          },
+          {
+            "path": "assets/OperationsPage-CyTwBJOH.js",
+            "sha256": "affa7e86ac3380bc78b89a6d2020bb4cdc6c8dabe79215263a2ab89fad3d4008",
+            "bytes": 83640
+          },
+          {
+            "path": "assets/ServerDisplay-BPROctth.js",
+            "sha256": "5e4db4d39b85700fa13f9c0a488b834f6f6f600211c4661fb1fd12c79a303709",
+            "bytes": 56984
+          },
+          {
+            "path": "assets/ServerDisplay-DGgkEUkp.css",
+            "sha256": "8063fff03f8e794058d59a1bc53590b2cacc057b9f7ca225c6597e6584f11d95",
+            "bytes": 26280
+          },
+          {
+            "path": "assets/UserPortal-BafGpQ2H.js",
+            "sha256": "17826fc9ced4cecb87fa02a69c8235b6f5fbeae24df1038d5429ababf34b1014",
+            "bytes": 7100
+          },
+          {
+            "path": "assets/UserPortal-DE_HviZN.css",
+            "sha256": "24a2272bddb66286c276b799a196a447319aa35d6268bdfa3cf20a2a55217563",
+            "bytes": 420
+          },
+          {
+            "path": "assets/index-Dm8TKP2b.js",
+            "sha256": "0fe705d2f178335d3acca4d35b6ebbe9f526b4ca3ef31e3b963172c8927b84b5",
+            "bytes": 786066
+          },
+          {
+            "path": "assets/index-rU5ATcVV.css",
+            "sha256": "a95e407a5b608b20d0d178ce8caddb0ae213ff0b8e12aab2fbea84654e5cf144",
+            "bytes": 79245
+          },
+          {
+            "path": "display-icons/os-alma.svg",
+            "sha256": "c8b1686f341a1ed3e3c9638f396539e50334f0c7e11fd4a5a7d1b286686d636d",
+            "bytes": 5190
+          },
+          {
+            "path": "display-icons/os-alpine.webp",
+            "sha256": "25c7dd641ef59d4cc6355672a4d8f6f3368d6c98e848e6cf1c99c7d521b386bf",
+            "bytes": 2200
+          },
+          {
+            "path": "display-icons/os-arch.svg",
+            "sha256": "9605f694e3fd91c1329c246cbe5ed1105e13ca39928569e23f2c6993fc2ed463",
+            "bytes": 915
+          },
+          {
+            "path": "display-icons/os-centos.svg",
+            "sha256": "22364a4fe637a35a829cbc92c2bd6f3ce912b47aedb7e64c59714c63d9ceeba9",
+            "bytes": 1634
+          },
+          {
+            "path": "display-icons/os-debian.svg",
+            "sha256": "ea5542edfa154f61e1eded2f7ad1b161e64735fb421d6831e478772f85dd7cde",
+            "bytes": 5828
+          },
+          {
+            "path": "display-icons/os-fedora.svg",
+            "sha256": "08dacee944d8472123c96d5fa7041512c53f2b9969c81bac798c46b9ffc40227",
+            "bytes": 1682
+          },
+          {
+            "path": "display-icons/os-gentoo.svg",
+            "sha256": "6fd85109e4873b62d8b49615a0981337e0b58ac250c185c85dfedac2bafabf23",
+            "bytes": 3430
+          },
+          {
+            "path": "display-icons/os-macos.svg",
+            "sha256": "3de3719e3bc9f696ac964b15c703d972cecd712d1c13fc85a800c92e4dd5fedb",
+            "bytes": 725
+          },
+          {
+            "path": "display-icons/os-nix.svg",
+            "sha256": "2a5d3e942d5db27c4f33ec21601c458f869d18d53e831422027a8a4828da3784",
+            "bytes": 915
+          },
+          {
+            "path": "display-icons/os-rocky.svg",
+            "sha256": "bfc0bdb756bc06ee977480cfcc28adc32980aded075de0d46f11b0dbc83447f1",
+            "bytes": 411
+          },
+          {
+            "path": "display-icons/os-ubuntu.svg",
+            "sha256": "edd92d1b8239902f3001fabfdb3c479ed2f8036186a03c5b21b61227345e0d4f",
+            "bytes": 2652
+          },
+          {
+            "path": "display-icons/os-unknown.svg",
+            "sha256": "986825609c5a3bfc8aa20b6468119246ff8e3b787a6c329186d83ac98051dc14",
+            "bytes": 300
+          },
+          {
+            "path": "display-icons/os-windows.svg",
+            "sha256": "0f6b74d8d8ede1ec0e454b3c6fcdfba65fbe989af9a49ad4ff0c498f4dc3afbb",
+            "bytes": 179
+          },
+          {
+            "path": "index.html",
+            "sha256": "f7ebd64bc96d1eed3d7be23518e96af645129fd769c11129efcab91277e73f99",
+            "bytes": 552
+          },
+          {
+            "path": "notices/NodeFlare.txt",
+            "sha256": "1a3a2e3d60f2a46379bae01ee1e95b8150635126f0f62c5723dc73fe545106d6",
+            "bytes": 1379
+          }
+        ]
+      },
+      "manifest": {
+        "format": 2,
+        "complete": true,
+        "source_revision": "working-tree-sha256:d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+        "image": "sha256:67eb5e9edcc0514a4491acf327805cbe7eaaecef5699293ce029afee9b6bd079",
+        "postgres_image": "sha256:345c8087a592c68bc6b1c347bb865b43e14cdefec77d741f85195588028f57a4",
+        "postgres_version_num": 160015,
+        "schema_migrations": [
+          {
+            "checksum": "8f0c30431791c5ffb88519c1db7918dd3943bde2328ee7e23deb42ebdc9abf0b7af796e69a6b03b34a24fc9ec7591f32",
+            "version": 1
+          },
+          {
+            "checksum": "2770b859e60d6d3d81ea3c2741124b90e94f39ed9744ed19173dc0b289183efd622c8405f7f9b52c7fc696ef2583dac3",
+            "version": 2
+          },
+          {
+            "checksum": "07b825f5bb9359ecf65d5a7a3f3c01037350ec4b80851f7dbe194ac30589585b303082c919051f6756adb324fdf71523",
+            "version": 3
+          },
+          {
+            "checksum": "c9972fa3e14609e02916b6e50097b2a137e244bdd9c50056830f7fc45bf6508da8ae0b0acf20612ba30704523ce646c4",
+            "version": 4
+          },
+          {
+            "checksum": "6cbb79918a973299973066ea7f8f0e824b2e700227cc3cad8c0167a1ae52f4c7ad563c299d062d2d3a8f699780d8295f",
+            "version": 5
+          },
+          {
+            "checksum": "d018df3357e2fd547b2153699380fc2044685560e2155f5f3b2522c599b82b4a728964591267249d6fb6f4b24ba74d9b",
+            "version": 6
+          },
+          {
+            "checksum": "17cf1b8cca0da92c5e53f0d4c15c07f97341b2f11d48b56b403d5a2f8040aa7178335d4537d47d9fa4ab7a7f637be908",
+            "version": 7
+          },
+          {
+            "checksum": "4d59210434fb8ba298dbe71b12a6dda61e41fbc5a6a3312270b399662a0a9c4ee9cfe3fbef9110840ab735839b7e5fcb",
+            "version": 8
+          },
+          {
+            "checksum": "bea84ec20c3af3b3a28340242f9ea8f2fba32a830a46531acf4a23fc835565b8dfbfd517b8f8e4b795500d8d6cc8ff55",
+            "version": 9
+          },
+          {
+            "checksum": "6088f288dc7c780256ce556b24427f8c3edd44307f2f888cbd409eb880c31a5bb67328985c87745d7e1dd2bcacaa830c",
+            "version": 10
+          },
+          {
+            "checksum": "f678a1443d4c151975fa7a8908d55564828a61c278297be2a4df5f7fabc2998fe877a996d11a7e0d1d796eb3ec67cdcd",
+            "version": 11
+          },
+          {
+            "checksum": "1bf6b28e9ad197bcb56d3d8c6ea4b4d7d8af3173249e94c87a0b13860fe95249a5af3c8ec216ea3e4f064a72bb13afce",
+            "version": 12
+          },
+          {
+            "checksum": "ff23410b8f11d7982bc7f038e49fe8eb2fe09e241005248ce046cf837ad92bfdd5bd9cf7480464835a569e7a8b940ac8",
+            "version": 13
+          },
+          {
+            "checksum": "fa2c41bbd4f4c0d568ab393ae6b43f6c88a22be88ab41ea2c188214b01b3c88e1f527527e381f819436cafe862dee6c6",
+            "version": 14
+          },
+          {
+            "checksum": "0a626497dfc680b4fcd01621ace5e98b8befa3b583187243cc03179da9b3a5cb6eba906632c4b5397bc2cc83b8c25174",
+            "version": 15
+          },
+          {
+            "checksum": "5623e9be4c877b57b8f0582adf3fb22fd1556c72267742474fbb01d7073909496fedbac14bff81a010cf021361d7fb48",
+            "version": 16
+          },
+          {
+            "checksum": "8d4067207450d3deb574c6fc8f589c2108477aa10e763bc9347c686ba86e61eee92ac95e17877bf758095ecf1e1dace7",
+            "version": 17
+          },
+          {
+            "checksum": "bd56197b3f3a7ad6824a18e712a97a70e84fc07791241a1e805c9fb7997e68f1a3c780176b66157e6220d1f614e6af7f",
+            "version": 18
+          },
+          {
+            "checksum": "89345dd67d592f796206b239f11ea9a7ae5b4573a65c6ce3310b3dcaef57c2152bf090140d725aae776974311d792ae6",
+            "version": 19
+          },
+          {
+            "checksum": "eccfe44f4760d818355f7d1f18a9d12bf6be07e7b2843a8cd2c9b98232ca69100ed14d8bd8e85cd80324f1260353b1ce",
+            "version": 20
+          },
+          {
+            "checksum": "ab827eaa3a47fcfeb9676dff3f997ffb01e780f345a1a66b364acc30a83eccb9c9f29d8ffff769155f48d47ecc88e171",
+            "version": 21
+          },
+          {
+            "checksum": "ba6e68c14d19a1ea813f3b2f399add7bd2aa00a52089836c038c33c207bab8e161aa69f6f71beaf6c45f31febd558544",
+            "version": 22
+          },
+          {
+            "checksum": "a7226decc164e8b2fa6d43669bd11b21d407a92f4537da46008ded0f0e1097fd8ed351dedc28303122b58c4344e2ebef",
+            "version": 23
+          },
+          {
+            "checksum": "93bebb8b3c83a8c61e49162b458a27c1793e8903233561c51d0091436bb8cb56b1d4ac21a3c20873d70d828766da2845",
+            "version": 24
+          },
+          {
+            "checksum": "83228c28fe4a49c69ad66ee3fbfef19418ffb95cf9aeb880fa989724122aa995d17879b0075f11e9ed86b99096982001",
+            "version": 25
+          },
+          {
+            "checksum": "a84bfbcd8fea594be5893aaad00aa2a39123d8c4dfec45f0fdb9a520553728e78e662f0a08dc4e3b5973488dac24ba5c",
+            "version": 26
+          },
+          {
+            "checksum": "54d0807830872b11987c2b9cfb30e3630257ad19882ae148debdf699eed68ea4e99f0d94abd0dc3f541290ffac09bd0c",
+            "version": 27
+          },
+          {
+            "checksum": "4cf5f056046e6a116829c4a5234ad52492f30bd9abb928dcb4039765cbdb63fc79da6489ea45fa16ff529686fe55170c",
+            "version": 28
+          },
+          {
+            "checksum": "5381d60ddbb68f7eed32a4efba5d085ad406f4df77b03340d65ddd70ede53fd4a6a6ae2f085379a00db1687c5f3ad210",
+            "version": 29
+          },
+          {
+            "checksum": "3de634a968650b2af7a72d2bf42e9fd147f637fb3106ee16704be7705d37ae897fd596f0eb8422b0edc6eddb2384a10b",
+            "version": 30
+          },
+          {
+            "checksum": "92e0659cffcf00b6adcdcea219fba003585ac80d329b6132792a9775ed7c7174079aed0b7ff7ae69995f8d8449ec4970",
+            "version": 31
+          },
+          {
+            "checksum": "8cfde4042016a323a1b5d23d7f94cc9d98423fd46cb127f9139dec151e2709ef3a679719a30a1027756d2102c3c08345",
+            "version": 32
+          },
+          {
+            "checksum": "cadc678f0f4f516ca2e8f523c56f392394cf8ed1c68d76350323cbd913be21c1fe4dc9d472123647f54de341789106ab",
+            "version": 33
+          },
+          {
+            "checksum": "97bf76c00c7075f6a9c7eac9cd456d3d3aa992d4a61671a3998c9f392dc54c2f8ea3ce39e0b8d604cb737d3f71638d5f",
+            "version": 34
+          },
+          {
+            "checksum": "b3b17a33e6a05af40e1ab76ea2a3f927d1a13a8bf4764e09028a235ff11f0acca14e81cfcd901cd230998dadd61c070c",
+            "version": 35
+          },
+          {
+            "checksum": "c8a95d166397dee4f84875a3163734ee02d684d46be1dc816aad6420579bed4b88f4037e26a89880bb9d5d84bcfda1b5",
+            "version": 36
+          },
+          {
+            "checksum": "9f740f94057103e912050dbbc78204e4ff54c23534f30c8237920f38d95218511356945bcc9b65f978273d1e5312878d",
+            "version": 37
+          },
+          {
+            "checksum": "2699d9a655093575b8afdc1cba96ae3ecf930d5f9cfd51555a73f97677bb14610f79efe693798cab5855a308713cef55",
+            "version": 38
+          },
+          {
+            "checksum": "fedc10fd0cc805e492e3b2cc0ca74e0ac3c0e8225982fd17dca09be7f3f5ac8baae293a87c81f5fc846ca606fb6613b6",
+            "version": 39
+          },
+          {
+            "checksum": "f88fca7b2e6c18a946db8070b65275cfb449d1399b528e1d3d03f5aa10a9951bf45b7e5fb29df3e0ea6146a349feab86",
+            "version": 40
+          },
+          {
+            "checksum": "e4ffff20e0a0fad75faedf5e7f074faf1175eab6448dd4c596568a33d2dccf2c157ddde2ae648c53ddd00a3b887d5594",
+            "version": 41
+          },
+          {
+            "checksum": "2a66282d36f74c9cfa40660127d0081cc4eb4e3bbbdccdea05c888c28413602d20f68cfe7134acc9e52dab0b07e5bbe6",
+            "version": 42
+          },
+          {
+            "checksum": "058500208354cab52eefca760b19d8f24f76dd0908d8000c17bd2abc7d6fde6ae0ba0958a18c5c0c83810448fcc81761",
+            "version": 43
+          },
+          {
+            "checksum": "fb450d55bd08d5b01beaa73857cb1b0710e858f0805c7aa37af439915959a685609954f0bca13be894368adb9b07f7a1",
+            "version": 44
+          },
+          {
+            "checksum": "4a67de73beac97f93aa2a2116328969c2372d17febd877311c9eda87d12323e94176b69ba8a40320f436edac2dfdcc10",
+            "version": 45
+          },
+          {
+            "checksum": "6630782f7d22fdb64486fdc99fde00af929ce0b35343a6ea8c91b30f9885f98494a3d525f1601556341dc0871dbae40f",
+            "version": 46
+          },
+          {
+            "checksum": "30358e7ed44b37ea6ad611c46febf0c94fc11319450b6ffce4f24649e9dce87570741379096511f52f458f66af6efaef",
+            "version": 47
+          },
+          {
+            "checksum": "38d51bc09b92cf9c8198872f642d670c3dfcbe60f8c9257aaa299598a59c2c7177784dea5ce37c70c17f97534b169508",
+            "version": 48
+          },
+          {
+            "checksum": "659a8d5e44e20fe7f2de4c074ac30b9fb6f398c4d158d82500b62c3311ee857d079db2b13f167318a538e3ba0e95ded7",
+            "version": 49
+          },
+          {
+            "checksum": "6aad6130a16702a45dad419993f639e35437a0f665134233e7c63cfa65e6d1b0a6a4df3f3e4668e8e2cf91afd48001ee",
+            "version": 50
+          },
+          {
+            "checksum": "1b1562111c258ae8a7b84122ec4f0303621d8ff37be5ad56705a0a8a04bc958cdb46a08de1adb26faa3b05c07707aa02",
+            "version": 51
+          },
+          {
+            "checksum": "bae93d2099d59af4faf1d450078bbef06241549a3bd78da722a56de6fdd1eba792a1ddd5b032135d47f6bcfe3296483b",
+            "version": 52
+          },
+          {
+            "checksum": "c1586a9093059616bbc61f642018d6c0504fbc608b03299b14bcfd09e7984ff080451bc11b079b460184a1aa5dee088b",
+            "version": 53
+          },
+          {
+            "checksum": "b8140d3ff439430752f70ff94ecafd7bd1b1c2540b97733038a7d4c314439dc31dcdde891969fd8eb90e5a4c8ccc1816",
+            "version": 54
+          },
+          {
+            "checksum": "0025d433fcde0881badf5aef34eb4e3ed61e4b04893d580960e72b6cd347bbab581410e840b40c166a2d68dfdbbd26cc",
+            "version": 55
+          },
+          {
+            "checksum": "d0d3f4df43002aed80c06db1476739e0e7e0a206f1b539df112d44dcd04606dd91916850ee1f6f142ea02cba537c6b07",
+            "version": 56
+          },
+          {
+            "checksum": "114e54f8f83cbc86e8b92e57ab11d2debcbab03d8a6fa616b87fc9af9d850e6ffe3ec86840cddd35d7aa8a7b70a66cf3",
+            "version": 57
+          }
+        ],
+        "keyring_included": false,
+        "node_data_included": false,
+        "snapshot_consistency": "pg_export_snapshot + release_permits for immutable signed release storage",
+        "excluded_transient_data": [
+          "network-acme-work",
+          "backups"
+        ],
+        "dependency_manifest_sha256": []
+      }
+    },
+    "wrong_content_same_key_id": {
+      "tool": "sinan-recovery",
+      "format": 1,
+      "action": "drill",
+      "passed": false,
+      "isolated": true,
+      "checks": {
+        "integrity": true,
+        "database_restore": true,
+        "panel_health": false,
+        "schema_pairing": true,
+        "temporary_resources_removed": true,
+        "host_loopback_reachable": false,
+        "keyring_material": true
+      },
+      "manifest_sha256": "79c7a7ef717f3ea80f2db2eccdcc235957a4f6a185748f0d9526370279cfe732",
+      "error": "隔离面板启动失败；请核对固定版本和独立解密材料，不能视为恢复通过。",
+      "completed_at": 1791066530
+    },
+    "isolated_full_restore": {
+      "tool": "sinan-recovery",
+      "format": 1,
+      "action": "drill",
+      "passed": true,
+      "isolated": true,
+      "checks": {
+        "integrity": true,
+        "database_restore": true,
+        "panel_health": true,
+        "schema_pairing": true,
+        "temporary_resources_removed": true,
+        "host_loopback_reachable": false,
+        "keyring_material": true,
+        "keyring_authenticated": true
+      },
+      "manifest_sha256": "79c7a7ef717f3ea80f2db2eccdcc235957a4f6a185748f0d9526370279cfe732",
+      "panel_health_source": "isolated_container_loopback",
+      "source_revision": "working-tree-sha256:d60e6845daabe7d7ff4fa51cd2713c69ebf57926e996fbb87d1af76b32f8c2f7",
+      "image": "sha256:67eb5e9edcc0514a4491acf327805cbe7eaaecef5699293ce029afee9b6bd079",
+      "completed_at": 1791066545
+    },
+    "missing_material_auth_report_not_accepted_as_passed": true,
+    "actual_drill_import": {
+      "passed": true,
+      "evidence_origin": "外部工具报告，面板未重新执行恢复"
+    },
+    "fixture_resources_removed": [
+      "sinan-recovery-final-executor",
+      "sinan-recovery-final-executor-data",
+      "sinan_recovery_final"
+    ],
+    "production_calls": false,
+    "actual_driver_sha256": "c5f0bcb5679607d96b8cd57099c5e8df945017aea819f8f8685e6ba3ea50d5e0"
+  },
+  "external_production_calls": false,
+  "ci": "paused, not triggered",
+  "nodequality_full_start_gate": "unchanged, incomplete conditional acceptance",
+  "release_or_deploy": false,
+  "cleanup": {
+    "status": "completed",
+    "tmp_fixtures": {
+      "count": 80,
+      "bytes": 138,
+      "exact_uuid_paths_inactive_owner_checked": true,
+      "other_tmp_paths_untouched": true
+    },
+    "recovery_owned": {
+      "removed_image_ids": [
+        "sha256:a7098e3c99d67252e8a406c206154f887547b165728b91ebbdce639eb1804228",
+        "sha256:3bd849590532368ae406c172b43de89c9f80e4e786bf42afce970c3918d3c271",
+        "sha256:c5813307103190d12892bf3dc2537d22d2363a6695462f4afac3dae64fc5ea1b",
+        "sha256:67eb5e9edcc0514a4491acf327805cbe7eaaecef5699293ce029afee9b6bd079",
+        "sha256:a25ed2930999211054147deda6d3a4d9535d9bc439eafe8076cf3eb085fd9e87"
+      ],
+      "removed_private_materials": [
+        "random AES correct/wrong keyring",
+        "age identity",
+        "child panel environment",
+        "encrypted fixture backup",
+        "decrypted database dump and archive"
+      ],
+      "removed_exact_paths_count": 14,
+      "removed_fixture_resources": [
+        "sinan-recovery-final-executor",
+        "sinan-recovery-final-executor-init",
+        "sinan-recovery-final-executor-data",
+        "sinan_recovery_final",
+        "sinan-recovery-validation-final",
+        "sinan-recovery-validation-wrong-key"
+      ],
+      "non_test_credentials_removed": false
+    },
+    "completed_at": "2026-10-03T22:34:52.302030+00:00",
+    "root_owned": {
+      "removed_container_id": "0eedfab7d4708057693aba56b78cc04fa6b538793bed45fc2f3b6642fff11cc6",
+      "removed_volume": "bd19ff575e04d3e49e85d4cadd839cbb3d8e2350b2e3b03daa89d9695933bf28",
+      "removed_image": "sha256:345c8087a592c68bc6b1c347bb865b43e14cdefec77d741f85195588028f57a4",
+      "removed_exact_directories": [
+        "target",
+        "web/node_modules",
+        "scripts/__pycache__",
+        "tests/__pycache__",
+        "tools/__pycache__",
+        ".local/cloud/operations-validation"
+      ],
+      "other_containers_images_volumes_untouched": true,
+      "no_active_task_application_or_compiler_processes": true,
+      "orphan_zombie_processes_are_not_active": true
+    },
+    "preserved": [
+      "current source and test cases",
+      "latest 35-file web/dist and licensing notices",
+      "bounded committed evidence and two mobile screenshots",
+      "pre-existing development toolchains, wrappers, environment and unrelated caches",
+      "effective non-test credentials"
+    ],
+    "historical_raw_logs_and_failed_environments_removed": true,
+    "no_global_docker_prune": true
+  }
+}

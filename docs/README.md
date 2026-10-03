@@ -45,3 +45,9 @@
 - [流量 outbox 有界读取](acceptance-bounded-usage.md)：保留原独立验收入口。
 
 当前 GitHub Actions 暂停；本地测试、历史 CI、源码合入与实机能力签收分别记录，不互相替代。
+
+## 平台扩展
+
+- [全部21类任务与入口](operations-expansion.md)
+- [管理与安全](control-center.md)
+- [本轮集中验收](acceptance/operations-platform-expansion.md)

@@ -5,7 +5,7 @@ mod business_support;
 mod creation;
 #[path = "ordered_paths/lifecycle.rs"]
 mod lifecycle;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 #[path = "ordered_paths/sources.rs"]

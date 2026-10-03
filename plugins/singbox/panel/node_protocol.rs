@@ -116,7 +116,7 @@ impl TlsInput {
     }
 }
 
-fn validate_pem(certificate: &str, key: &str) -> ApiResult<()> {
+pub(super) fn validate_pem(certificate: &str, key: &str) -> ApiResult<()> {
     let invalid = || ApiError::BadRequest("TLS 证书链或私钥无效，或两者不匹配".into());
     if certificate.len() > 65536 || key.len() > 16384 {
         return Err(ApiError::BadRequest(

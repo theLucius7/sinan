@@ -1,0 +1,24 @@
+.network-workbench { display:grid; grid-template-columns:minmax(0,1fr); gap:1rem; min-width:0; overflow-wrap:anywhere; }
+.network-workbench label { display:grid; grid-template-columns:minmax(0,1fr); gap:.4rem; min-width:0; }
+.network-workbench input:not([type="checkbox"]),.network-workbench select,.network-workbench textarea { width:100%; min-width:0; max-width:100%; }
+.nw-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; min-width:0; }
+.nw-inline { display:flex !important; align-items:center; gap:.5rem; }
+.nw-tabs,.nw-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.nw-tabs [aria-pressed="true"] { font-weight:700; outline:2px solid currentColor; }
+.nw-run-list { display:flex; gap:.5rem; flex-wrap:wrap; }
+.network-workbench article { padding:1rem; border:1px solid var(--border,#68707b); border-radius:.6rem; }
+.network-workbench pre { max-height:28rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.network-workbench table { width:100%; border-collapse:collapse; }
+.network-workbench th,.network-workbench td { padding:.5rem; text-align:left; border-bottom:1px solid var(--border,#68707b); }
+.network-workbench textarea { width:100%; box-sizing:border-box; }
+@media(max-width:640px) { .nw-grid { grid-template-columns:minmax(0,1fr); } .network-workbench table { display:block; overflow-x:auto; } .nw-actions button { flex:1 1 45%; } }
+.nw-path ol { display:flex; flex-wrap:wrap; gap:.7rem; list-style:none; padding:0; }
+.nw-path li { display:grid; padding:.5rem; border:1px solid var(--border,#68707b); border-radius:.3rem; }
+.nw-path li:not(:last-child)::after { content:'→'; }
+.nw-path small { display:block; opacity:.8; }
+.nw-path svg { width:100%; max-height:22rem; }
+.nw-throughput { margin-block:1rem; padding:1rem; border:1px solid var(--border,#68707b); border-radius:.5rem; }
+.nw-throughput svg { width:100%; max-height:22rem; overflow:visible; }
+.nw-throughput svg text { fill:currentColor; font-size:12px; }
+.nw-throughput ul { display:flex; flex-wrap:wrap; gap:.5rem 1rem; list-style:none; padding:0; }
+.nw-curve-key { display:inline-block; width:1rem; height:.2rem; vertical-align:middle; margin-inline-end:.4rem; }

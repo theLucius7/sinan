@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use sinan_compiler::{Access, Node};
 use sinan_protocol::{UsageBatch, UsageRecord};
 use sqlx::{PgPool, migrate::Migrator};
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::BTreeMap};
 use uuid::Uuid;
 
 async fn metadata(panel: &TestPanel, cookie: &str, server: i64) -> Result<Value> {
@@ -318,7 +318,12 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
     }
     // Starting the new panel applies the real migration to already imported records.
     let panel = TestPanel::start(pool.clone()).await?;
-    assert_eq!(migration_recovery::legacy_snapshot(&pool).await?, legacy);
+    let initial_observation = batch_observation(&pool, server, epoch).await?;
+    assert_eq!(initial_observation, (None, None, 0));
+    assert_eq!(
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
+        legacy
+    );
     let mut connection = pool.acquire().await?;
     let activity = sinan_panel::plugins::runtime_activity_on(&mut connection, server, 20).await?;
     assert!(activity.configured);
@@ -327,8 +332,28 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
     // Reopening the migrated database must neither duplicate enablement nor
     // alter previously acknowledged batches. Offline outbox replay still dedupes.
     all.run(&pool).await?;
+    assert_eq!(
+        batch_observation(&pool, server, epoch).await?,
+        initial_observation
+    );
+    let replay_started = sinan_protocol::now_timestamp();
     sinan_panel::plugins::singbox::usage::ingest(&panel.state, server, batch.clone()).await?;
-    assert_eq!(migration_recovery::legacy_snapshot(&pool).await?, legacy);
+    let replayed = batch_observation(&pool, server, epoch).await?;
+    assert_eq!(
+        replayed.0, None,
+        "the imported first receive time is unknown"
+    );
+    assert_eq!(replayed.2, 1);
+    assert!(
+        replayed
+            .1
+            .is_some_and(|at| (replay_started..=sinan_protocol::now_timestamp()).contains(&at)),
+        "replay observation must use the actual request interval"
+    );
+    assert_eq!(
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
+        legacy
+    );
     let mut altered = batch;
     altered.records[0].downlink += 1;
     assert!(
@@ -336,7 +361,11 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
             .await
             .is_err()
     );
-    assert_eq!(migration_recovery::legacy_snapshot(&pool).await?, legacy);
+    assert_eq!(batch_observation(&pool, server, epoch).await?, replayed);
+    assert_eq!(
+        without_batch_observation_columns(migration_recovery::legacy_snapshot(&pool).await?)?,
+        legacy
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM server_plugins")
             .fetch_one(&pool)
@@ -476,4 +505,38 @@ async fn migration_case(pool: PgPool, binary: Option<std::path::PathBuf>) -> Res
         );
     }
     Ok(())
+}
+
+async fn batch_observation(
+    pool: &PgPool,
+    server: i64,
+    epoch: Uuid,
+) -> Result<(Option<i64>, Option<i64>, i64)> {
+    Ok(sqlx::query_as(
+        "SELECT received_at,last_replayed_at,replay_count FROM usage_batches WHERE server_id=$1 AND epoch=$2 AND seq=1",
+    )
+    .bind(server)
+    .bind(epoch)
+    .fetch_one(pool)
+    .await?)
+}
+
+fn without_batch_observation_columns(
+    mut snapshot: BTreeMap<&'static str, Value>,
+) -> Result<BTreeMap<&'static str, Value>> {
+    // Only the new separately asserted observations are excluded. Every legacy
+    // identity, payload hash, counter, credential and timestamp stays comparable.
+    let batches = snapshot
+        .get_mut("usage_batches")
+        .and_then(Value::as_array_mut)
+        .context("imported usage batches")?;
+    for batch in batches {
+        let fields = batch.as_object_mut().context("imported batch object")?;
+        for field in ["received_at", "last_replayed_at", "replay_count"] {
+            fields
+                .remove(field)
+                .context("new batch observation column")?;
+        }
+    }
+    Ok(snapshot)
 }

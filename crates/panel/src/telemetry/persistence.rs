@@ -158,6 +158,7 @@ pub(super) async fn save(
             if sample.sampled_at >= (now - RAW_MS).div_euclid(60_000) * 60_000 {
                 sqlx::query("INSERT INTO telemetry_samples(server_id,id,sampled_at,digest,metrics) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING").bind(server).bind(sample.id).bind(sample.sampled_at).bind(&digest).bind(&value).execute(&mut *tx).await?;
             }
+            crate::fleet::monitoring::observe(&mut tx, server, &sample).await?;
             sqlx::query("UPDATE servers SET latest_metrics=$2,metrics_sampled_at=$3 WHERE id=$1 AND metrics_sampled_at<$3").bind(server).bind(&value).bind(sample.sampled_at).execute(&mut *tx).await?;
             // Preserve the old last-observation projection for old consumers.
             sqlx::query("INSERT INTO metrics_minutely(server_id,bucket,metrics,sampled_at) VALUES($1,$2,$3,$4) ON CONFLICT(server_id,bucket) DO UPDATE SET metrics=EXCLUDED.metrics,sampled_at=EXCLUDED.sampled_at WHERE metrics_minutely.sampled_at<EXCLUDED.sampled_at").bind(server).bind(sample.sampled_at.div_euclid(60_000)*60).bind(&value).bind(sample.sampled_at).execute(&mut *tx).await?;

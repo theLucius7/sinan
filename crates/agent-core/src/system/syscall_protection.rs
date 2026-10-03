@@ -81,7 +81,7 @@ pub(super) fn fixture_output(program: &Path, args: &[String]) -> Option<&'static
     } else if program == Path::new("cat") && args == ["/proc/sys/kernel/seccomp/actions_avail"] {
         Some("kill_process kill_thread trap errno trace log allow\n")
     } else {
-        None
+        super::cpu_ceiling::fixture_output(program, args)
     }
 }
 

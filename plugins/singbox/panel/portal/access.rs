@@ -104,9 +104,10 @@ pub(super) async fn view(
     let credentials = sqlx::query("SELECT id,name,created_at,last_used_at FROM passkey_credentials WHERE account_id=$1 ORDER BY created_at,id")
         .bind(account).fetch_all(&mut *tx).await?;
     let credentials = credentials.iter().map(|r| Ok(json!({"id":r.try_get::<Uuid,_>("id")?,"name":r.try_get::<String,_>("name")?,"created_at":r.try_get::<i64,_>("created_at")?,"last_used_at":r.try_get::<Option<i64>,_>("last_used_at")?}))).collect::<ApiResult<Vec<_>>>()?;
+    let subscription_status = super::super::subscriptions::diagnostic_on(&mut tx, id).await?;
     let result = json!({"authenticated":true,"configuration":state.passkeys.info(),"name":row.try_get::<String,_>("name")?,
         "subscription_url":format!("{}/sub/{}?format=singbox",state.config.public_url,row.try_get::<String,_>("subscription_token")?),
-        "usage":{"uplink":usage.try_get::<String,_>("uplink")?,"downlink":usage.try_get::<String,_>("downlink")?},"keys":credentials});
+        "usage":{"uplink":usage.try_get::<String,_>("uplink")?,"downlink":usage.try_get::<String,_>("downlink")?},"keys":credentials,"subscription_status":subscription_status});
     tx.commit().await?;
     Ok(keys::reply(result))
 }
@@ -118,11 +119,35 @@ pub(super) async fn logout(
 ) -> ApiResult<Response> {
     state.passkeys.check_origin(&headers)?;
     if let Ok(hash) = session_hash(&headers) {
-        sqlx::query("DELETE FROM singbox_portal_sessions WHERE token_hash=$1 AND account_id=$2")
-            .bind(hash)
+        let mut tx = state.pool.begin().await?;
+        let deleted = sqlx::query(
+            "DELETE FROM singbox_portal_sessions WHERE token_hash=$1 AND account_id=$2",
+        )
+        .bind(hash)
+        .bind(account)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            > 0;
+        if deleted {
+            let user: Option<i64> = sqlx::query_scalar(
+                "SELECT user_id FROM singbox_portal_accounts WHERE account_id=$1",
+            )
             .bind(account)
-            .execute(&state.pool)
+            .fetch_optional(&mut *tx)
             .await?;
+            if let Some(user) = user {
+                super::super::operations_workflows::event(
+                    &mut tx,
+                    None,
+                    Some(user),
+                    "security_portal_logout",
+                    json!({"session_revoked":true}),
+                )
+                .await?;
+            }
+        }
+        tx.commit().await?;
     }
     let mut response = keys::reply(json!({"ok":true}));
     keys::set_cookie(&state, &mut response, COOKIE, "", 0)?;

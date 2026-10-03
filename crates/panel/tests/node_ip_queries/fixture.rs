@@ -19,6 +19,7 @@ pub async fn prepare(panel: &TestPanel, server: i64) -> Result<()> {
                 sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY,
                 sinan_protocol::DIAGNOSTIC_SECTIONS_CAPABILITY,
                 sinan_protocol::DIAGNOSTIC_SERVICE_CAPABILITY,
+                sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY,
                 sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY,
                 sinan_protocol::release::ARTIFACT_SIGNATURE_CAPABILITY,
             ]

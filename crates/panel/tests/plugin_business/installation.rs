@@ -1,14 +1,11 @@
 use super::metadata;
-use crate::business_support::{TestPanel, id, receive_envelope, send_envelope};
+use crate::business_support::{TestPanel, id, receive_envelope, release_fixture, send_envelope};
 use anyhow::{Context, Result};
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sinan_protocol::{ApplyResult, ApplyStatus, Envelope, Heartbeat, now_timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
-
-#[path = "../release_fixture/mod.rs"]
-mod release_fixture;
 
 async fn supported_online(pool: &PgPool, server: i64) -> Result<()> {
     sqlx::query("UPDATE servers SET capabilities=$2,last_seen=$3 WHERE id=$1")

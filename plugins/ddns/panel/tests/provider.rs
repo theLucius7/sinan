@@ -106,7 +106,7 @@ async fn handle(State(data): State<Arc<Mutex<Data>>>, request: Request<Body>) ->
             json!({"success":true,"result":record})
         };
         let pause = if parts.method == "GET" && path.ends_with("/dns_records") {
-            data.list_pause.clone()
+            data.list_pause.take()
         } else if parts.method != "GET" {
             data.write_pause.clone()
         } else {

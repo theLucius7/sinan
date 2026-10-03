@@ -5,7 +5,9 @@ import type { Account } from '../src/plugins/alicloud/types'
 test('cloud edits do not copy cached billing or write-only credentials back into requests', () => {
   const input = { name: ' 云账号 ', site: 'china' as const, enabled: true, auto_enabled: false, limit_gb: 100, bill: { sensitive: 'cached' } }
   expect(accountWrite(input, ' ', '', 2)).toEqual({ name: '云账号', site: 'china', enabled: true, auto_enabled: false, limit_gb: 100, revision: 2 })
-  expect(accountWrite(input, ' TEST_ONLY_ID ', ' TEST_ONLY_SECRET ').access_key_secret).toBe('TEST_ONLY_SECRET')
+  expect(accountWrite(input, ' TEST_ONLY_ID ', ' TEST_ONLY_SECRET ').access_key_secret).toBeUndefined()
+  expect(accountWrite(input, ' TEST_ONLY_ID ', ' TEST_ONLY_SECRET ', undefined, '', true)).toMatchObject({legacy_credentials: true, access_key_id: 'TEST_ONLY_ID', access_key_secret: 'TEST_ONLY_SECRET'})
+  expect(accountWrite(input, ' TEST_ONLY_ID ', ' TEST_ONLY_SECRET ', 3, 'TEST_ONLY_CREDENTIAL_REF', true)).toEqual({ name: '云账号', site: 'china', enabled: true, auto_enabled: false, limit_gb: 100, revision: 3, credential_id: 'TEST_ONLY_CREDENTIAL_REF' })
   expect(message('TEST_ONLY_SECRET')).toBe('云接口暂时不可用')
   for (const code of ['constructor', '__proto__', 'toString']) { expect(status(code)).toBe('状态未知'); expect(message(code)).toBe('云接口暂时不可用') }
 })

@@ -1,5 +1,5 @@
 use crate::{
-    AppState, auth,
+    AppState,
     error::{ApiError, ApiResult},
     probes,
     servers::{SERVER_COLUMNS, Server},
@@ -37,7 +37,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 async fn administrator(state: &AppState, headers: &HeaderMap) -> ApiResult<bool> {
-    match auth::require_admin(state, headers).await {
+    match crate::control_center::authenticate(state, headers).await {
         Ok(_) => Ok(true),
         Err(ApiError::Unauthorized) => Ok(false),
         Err(error) => Err(error),
@@ -51,10 +51,35 @@ async fn access(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<
 }
 
 async fn allowed(state: &AppState, headers: &HeaderMap, id: Option<i64>) -> ApiResult<bool> {
-    let admin = administrator(state, headers).await?;
-    if !admin && !settings::read(&state.pool).await?.public_dashboard {
-        return Err(ApiError::Unauthorized);
-    }
+    allowed_for(state, headers, id, "servers:read").await
+}
+
+async fn allowed_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    id: Option<i64>,
+    private_capability: &str,
+) -> ApiResult<bool> {
+    let private = match crate::control_center::authenticate(state, headers).await {
+        Ok(actor) => {
+            if !actor.allows("monitoring:read")
+                || id.is_some_and(|id| !actor.allows_server(id))
+                || id.is_none() && !actor.global_servers()
+            {
+                return Err(ApiError::Forbidden(
+                    "当前管理员或 API 令牌没有此看板监控范围的读取权限".into(),
+                ));
+            }
+            actor.allows(private_capability)
+        }
+        Err(ApiError::Unauthorized) => {
+            if !settings::read(&state.pool).await?.public_dashboard {
+                return Err(ApiError::Unauthorized);
+            }
+            false
+        }
+        Err(error) => return Err(error),
+    };
     if let Some(id) = id {
         let visible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM servers WHERE id=$1 AND deleted_at IS NULL AND COALESCE(asset_settings->>'hidden','false')<>'true')")
             .bind(id).fetch_one(&state.pool).await?;
@@ -62,7 +87,7 @@ async fn allowed(state: &AppState, headers: &HeaderMap, id: Option<i64>) -> ApiR
             return Err(ApiError::NotFound);
         }
     }
-    Ok(admin)
+    Ok(private)
 }
 
 fn select(value: &Value, fields: &[&str]) -> Value {
@@ -72,6 +97,19 @@ fn select(value: &Value, fields: &[&str]) -> Value {
             .filter_map(|key| value.get(*key).map(|v| ((*key).into(), v.clone())))
             .collect(),
     )
+}
+
+pub(crate) fn public_metrics_for_asset(value: &Value, asset: &Value) -> Value {
+    let mut scoped = value.clone();
+    if let Ok(settings) =
+        serde_json::from_value::<crate::server_assets::AssetSettings>(asset.clone())
+        && let Some(interfaces) = scoped
+            .get_mut("network_interfaces")
+            .and_then(Value::as_object_mut)
+    {
+        interfaces.retain(|name, _| settings.includes(name));
+    }
+    public_metrics(&scoped)
 }
 
 pub(crate) fn public_metrics(value: &Value) -> Value {
@@ -167,7 +205,8 @@ fn server_view(server: Server, admin: bool) -> ApiResult<Value> {
             "virtualization",
         ],
     );
-    result["latest_metrics"] = public_metrics(&value["latest_metrics"]);
+    result["latest_metrics"] =
+        public_metrics_for_asset(&value["latest_metrics"], &value["asset_settings"]);
     result["asset_settings"] = select(
         &value["asset_settings"],
         &[
@@ -311,8 +350,12 @@ async fn metrics(
     let mut value = serde_json::to_value(telemetry::read_history(&state, id, query).await?.0)
         .map_err(anyhow::Error::from)?;
     if !admin {
+        let asset: Value = sqlx::query_scalar("SELECT asset_settings FROM servers WHERE id=$1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
         for sample in value.as_array_mut().unwrap() {
-            sample["metrics"] = public_metrics(&sample["metrics"]);
+            sample["metrics"] = public_metrics_for_asset(&sample["metrics"], &asset);
         }
     }
     Ok(Json(value))
@@ -339,7 +382,7 @@ async fn probe_list(
     headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> ApiResult<Json<Vec<ProbeSpec>>> {
-    let admin = allowed(&state, &headers, Some(id)).await?;
+    let admin = allowed_for(&state, &headers, Some(id), "network:read").await?;
     let mut probes = probes::read(&state, id).await?;
     if !admin {
         probes.0.iter_mut().for_each(sanitize_probe);
@@ -353,7 +396,7 @@ async fn probe_history(
     Path(id): Path<i64>,
     Query(query): Query<probes::HistoryQuery>,
 ) -> ApiResult<Json<Vec<ProbeResult>>> {
-    let admin = allowed(&state, &headers, Some(id)).await?;
+    let admin = allowed_for(&state, &headers, Some(id), "network:read").await?;
     let mut results = probes::read_history(&state, id, query).await?;
     if !admin {
         sanitize_results(&mut results.0);
@@ -365,7 +408,7 @@ async fn probe_overview(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<probes::Overview>>> {
-    let admin = allowed(&state, &headers, None).await?;
+    let admin = allowed_for(&state, &headers, None, "network:read").await?;
     let mut overview = probes::read_overview(&state, true).await?;
     if !admin {
         for row in &mut overview.0 {

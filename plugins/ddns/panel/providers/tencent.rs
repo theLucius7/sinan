@@ -24,11 +24,21 @@ impl Tencent {
         result
     }
     async fn call(&self, rule: &Rule, action: &str, body: Value) -> Result<Value, Failure> {
+        self.call_credentials(&rule.access_key_id, &rule.access_key_secret, action, body)
+            .await
+    }
+    pub(super) async fn call_credentials(
+        &self,
+        key: &str,
+        secret: &str,
+        action: &str,
+        body: Value,
+    ) -> Result<Value, Failure> {
         let body = body.to_string();
         let timestamp = sinan_protocol::now_timestamp();
         let auth = signing::tencent(
-            &rule.access_key_id,
-            &rule.access_key_secret,
+            key,
+            secret,
             "dnspod.tencentcloudapi.com",
             action,
             &body,
@@ -89,16 +99,7 @@ fn record(value: &Value, zone: &str, detail: bool) -> Result<Record, Failure> {
 }
 
 impl Tencent {
-    pub(super) async fn reconcile_guarded<G, Check, Checked>(
-        &self,
-        rule: &Rule,
-        ip: IpAddr,
-        mut check: Check,
-    ) -> Result<Outcome, Failure>
-    where
-        Check: FnMut() -> Checked,
-        Checked: Future<Output = Result<G, Failure>>,
-    {
+    async fn read_records(&self, rule: &Rule) -> Result<Vec<Record>, Failure> {
         let spec = &rule.config;
         let zone = self
             .call(rule, "DescribeDomain", json!({"Domain":spec.zone_id}))
@@ -122,7 +123,31 @@ impl Tencent {
             .iter()
             .map(|v| record(v, &spec.zone_id, false))
             .collect::<Result<Vec<_>, _>>()?;
-        let existing = choose(rule, &records, &spec.zone_id)?;
+        Ok(records)
+    }
+
+    pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
+        let records = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &rule.config.zone_id)?;
+        Ok(existing.map(Record::snapshot))
+    }
+
+    pub(super) async fn reconcile_expected_guarded<G, Check, Checked>(
+        &self,
+        rule: &Rule,
+        ip: IpAddr,
+        expected: Option<&Snapshot>,
+        mut check: Check,
+    ) -> Result<Outcome, Failure>
+    where
+        Check: FnMut() -> Checked,
+        Checked: Future<Output = Result<G, Failure>>,
+    {
+        let spec = &rule.config;
+        let records = self.read_records(rule).await?;
+        let existing = choose(rule, &records, &rule.config.zone_id)?;
+        let current = existing.map(Record::snapshot);
+        expected_matches(current.as_ref(), expected)?;
         if let Some(record) = existing.filter(|r| same(r, rule, ip)) {
             let _guard = check().await?;
             return Ok(Outcome {

@@ -89,6 +89,8 @@ impl Privileged for RecordingOps {
                 && args == ["/proc/sys/kernel/seccomp/actions_avail"]
             {
                 Some("errno allow\n")
+            } else if program == Path::new("cat") && args == ["/sys/fs/cgroup/cgroup.controllers"] {
+                Some("cpu memory io pids\n")
             } else {
                 None
             };
@@ -311,6 +313,7 @@ async fn openrc_refuses_diagnostic_starts_without_equivalent_swap_protection() -
         timeout_secs: 10,
         memory_max: Default::default(),
         tasks_max: Default::default(),
+        cpu_max_percent: Default::default(),
         cpu_weight: Default::default(),
         io_weight: Default::default(),
         oom_score_adjust: Default::default(),
@@ -341,6 +344,7 @@ async fn systemd_diagnostic_jobs_keep_independent_supervision_and_status() -> Re
         timeout_secs: 10,
         memory_max: Default::default(),
         tasks_max: Default::default(),
+        cpu_max_percent: Default::default(),
         cpu_weight: Default::default(),
         io_weight: Default::default(),
         oom_score_adjust: Default::default(),
@@ -350,24 +354,24 @@ async fn systemd_diagnostic_jobs_keep_independent_supervision_and_status() -> Re
     ops.output.lock().unwrap().stdout = "LoadState=loaded\nActiveState=active\nSubState=exited\nResult=success\nExecMainStatus=0\nExecMainCode=1\nExecMainStartTimestampMonotonic=1\n".into();
     assert_eq!(services.job_status(&job.unit).await?, JobStatus::Succeeded);
     let calls = ops.calls.lock().unwrap();
-    assert_eq!(calls.len(), 6);
+    assert_eq!(calls.len(), 7);
     assert_eq!(calls[0].0, Path::new("stat"));
-    assert_eq!(calls[4].0, Path::new("systemd-run"));
+    assert_eq!(calls[5].0, Path::new("systemd-run"));
     assert!(
-        calls[4]
+        calls[5]
             .1
             .contains(&"--property=KillMode=control-group".into())
     );
-    assert!(calls[4].1.contains(&"--property=PrivateMounts=yes".into()));
-    assert!(calls[4].1.contains(&"--property=UMask=0077".into()));
+    assert!(calls[5].1.contains(&"--property=PrivateMounts=yes".into()));
+    assert!(calls[5].1.contains(&"--property=UMask=0077".into()));
     assert!(
-        calls[4]
+        calls[5]
             .1
             .contains(&"--property=TimeoutStartSec=10s".into())
     );
-    let separator = calls[4].1.iter().position(|arg| arg == "--").unwrap();
+    let separator = calls[5].1.iter().position(|arg| arg == "--").unwrap();
     assert_eq!(
-        &calls[4].1[separator + 1..],
+        &calls[5].1[separator + 1..],
         [
             "/usr/bin/flock",
             "--exclusive",
@@ -377,8 +381,8 @@ async fn systemd_diagnostic_jobs_keep_independent_supervision_and_status() -> Re
             "/bin/true",
         ]
     );
-    assert_eq!(calls[5].0, Path::new("systemctl"));
-    assert_eq!(calls[5].1.last(), Some(&job.unit));
+    assert_eq!(calls[6].0, Path::new("systemctl"));
+    assert_eq!(calls[6].1.last(), Some(&job.unit));
     Ok(())
 }
 

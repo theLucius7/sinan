@@ -48,6 +48,8 @@ impl Cloud {
         account: &Account,
         resource: &Resource,
     ) -> Result<State, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         if resource.kind != "ecs" {
             return Err("unsupported_resource".into());
         }
@@ -73,6 +75,8 @@ impl Cloud {
         action: &str,
         mode: &str,
     ) -> Result<String, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let mut params = vec![
             ("RegionId", resource.region.clone()),
             ("InstanceId", resource.cloud_id.clone()),

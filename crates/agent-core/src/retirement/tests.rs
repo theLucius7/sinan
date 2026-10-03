@@ -677,6 +677,7 @@ async fn diagnostic_shutdown_failure_prevents_success_and_can_be_retried() -> Re
         timeout_secs: 60,
         memory_max: Default::default(),
         tasks_max: Default::default(),
+        cpu_max_percent: Default::default(),
         cpu_weight: Default::default(),
         io_weight: Default::default(),
         oom_score_adjust: Default::default(),
@@ -1013,6 +1014,20 @@ impl Privileged for ControlledSystemctl {
         Box::pin(async move {
             ensure!(program == Path::new("systemctl"), "unexpected program");
             match args.first().map(String::as_str) {
+                Some("list-units")
+                    if args.last().map(String::as_str)
+                        == Some("sinan-fleet-terminal-*.service") =>
+                {
+                    Ok(CommandOutput {
+                        success: !self.query_fails.load(Ordering::SeqCst),
+                        stdout: String::new(),
+                        stderr: if self.query_fails.load(Ordering::SeqCst) {
+                            "Failed to connect to bus: Permission denied".into()
+                        } else {
+                            String::new()
+                        },
+                    })
+                }
                 Some("show") if self.query_fails.load(Ordering::SeqCst) => Ok(CommandOutput {
                     success: false,
                     stdout: String::new(),

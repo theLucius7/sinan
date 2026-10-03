@@ -28,7 +28,7 @@ async fn unresolved_cloud_receipts_block_credential_identity_changes_but_allow_d
     sqlx::query("INSERT INTO alicloud_power_jobs(id,resource_id,account_revision,resource_revision,action,stop_mode,source,before_state,status,created_at,expires_at,updated_at) VALUES($1,$2,1,1,'stop','KeepCharging','manual',$3,'running',$4,$5,$4)")
         .bind(power).bind(power_resource).bind(state).bind(now).bind(now+300).execute(&pool).await?;
     let path = format!("/api/plugins/alicloud/accounts/{account}");
-    let body = json!({"name":"测试账号","site":"china","enabled":true,"auto_enabled":false,"limit_gb":100,"revision":1,"access_key_id":"","access_key_secret":""});
+    let body = json!({"name":"测试账号","site":"china","enabled":true,"auto_enabled":false,"limit_gb":100,"revision":1,"access_key_id":"","access_key_secret":"","legacy_credentials":true});
     let mut rotate = body.clone();
     rotate["access_key_id"] = "TEST_ONLY_NEW_KEY".into();
     rotate["access_key_secret"] = "TEST_ONLY_NEW_SECRET".into();

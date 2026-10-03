@@ -20,10 +20,27 @@ pub(super) async fn run(pool: sqlx::PgPool) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        if let Ok(cloud) = super::client::Cloud::new()
-            && let Err(error) = jobs::tick(&pool, &cloud).await
+        let result = match super::client::Cloud::new(&pool) {
+            Ok(cloud) => jobs::tick(&pool, &cloud).await,
+            Err(error) => Err(super::failure(error)),
+        };
+        let (status, details) = match result {
+            Ok(()) => (
+                "healthy",
+                serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
+            ),
+            Err(error) => {
+                tracing::warn!(%error,"Cloud power reconciliation failed");
+                (
+                    "failed",
+                    serde_json::json!({"scope":"power_scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
+                )
+            }
+        };
+        if let Err(error) =
+            crate::control_center::system::heartbeat(&pool, "alicloud-power", status, details).await
         {
-            tracing::warn!(%error,"Cloud power reconciliation failed");
+            tracing::warn!(%error,"Cloud power heartbeat storage failed");
         }
     }
 }

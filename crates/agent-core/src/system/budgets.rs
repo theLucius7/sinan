@@ -1,5 +1,5 @@
 use super::*;
-use sinan_adapter_sdk::{CpuWeight, IoWeight, MemoryMax, OomScoreAdjust, TasksMax};
+use sinan_adapter_sdk::{CpuMaxPercent, CpuWeight, IoWeight, MemoryMax, OomScoreAdjust, TasksMax};
 use std::{path::PathBuf, sync::Mutex};
 
 #[derive(Default)]
@@ -102,6 +102,7 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
     let mut job: ServiceJob = serde_json::from_value(legacy_service())?;
     assert_eq!(job.memory_max.get(), 512 * 1024 * 1024);
     assert_eq!(job.tasks_max.get(), 128);
+    assert_eq!(job.cpu_max_percent.get(), 100);
     assert_eq!(job.cpu_weight.get(), 10);
     assert_eq!(job.io_weight.get(), 10);
     assert_eq!(job.oom_score_adjust.get(), 500);
@@ -109,6 +110,7 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
         if custom {
             job.memory_max = MemoryMax::new(64 * 1024 * 1024)?;
             job.tasks_max = TasksMax::new(16)?;
+            job.cpu_max_percent = CpuMaxPercent::new(20)?;
             job.cpu_weight = CpuWeight::new(25)?;
             job.io_weight = IoWeight::new(30)?;
             job.oom_score_adjust = OomScoreAdjust::new(700)?;
@@ -137,7 +139,11 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
                 .iter()
                 .filter(|arg| arg.starts_with("--property=ExecStartPre="))
                 .collect::<Vec<_>>(),
-            [crate::system::syscall_protection::FILTER_CHECK]
+            [crate::system::cpu_ceiling::pre_command(
+                job.cpu_max_percent.get()
+            )]
+            .iter()
+            .collect::<Vec<_>>()
         );
         for (property, expected) in [
             ("MemoryMax", job.memory_max.get().to_string()),
@@ -148,6 +154,8 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
             ("SystemCallErrorNumber", "EPERM".into()),
             ("TasksMax", job.tasks_max.get().to_string()),
             ("CPUWeight", job.cpu_weight.get().to_string()),
+            ("CPUQuota", format!("{}%", job.cpu_max_percent.get())),
+            ("CPUQuotaPeriodSec", "100ms".into()),
             ("IOWeight", job.io_weight.get().to_string()),
             ("OOMScoreAdjust", job.oom_score_adjust.get().to_string()),
         ] {
@@ -159,7 +167,7 @@ async fn service_command_applies_every_budget_before_the_program_separator() -> 
             assert_eq!(properties, vec![&format!("{prefix}{expected}")]);
         }
     }
-    assert_eq!(ops.0.lock().unwrap().len(), 10);
+    assert_eq!(ops.0.lock().unwrap().len(), 12);
     Ok(())
 }
 
@@ -175,6 +183,9 @@ fn persisted_budgets_reject_unlimited_and_invalid_values_without_defaulting() ->
         ("tasks_max", serde_json::json!("infinity")),
         ("cpu_weight", serde_json::json!(0)),
         ("cpu_weight", serde_json::json!(10001)),
+        ("cpu_max_percent", serde_json::json!(0)),
+        ("cpu_max_percent", serde_json::json!(6401)),
+        ("cpu_max_percent", serde_json::json!(null)),
         ("io_weight", serde_json::json!(0)),
         ("io_weight", serde_json::json!(10001)),
         ("oom_score_adjust", serde_json::json!(-1000)),

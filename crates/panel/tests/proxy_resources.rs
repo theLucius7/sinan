@@ -4,7 +4,7 @@ mod business_support;
 #[allow(dead_code)]
 #[path = "ordered_paths/support.rs"]
 mod ordered_support;
-mod release_fixture;
+use business_support::release_fixture;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 

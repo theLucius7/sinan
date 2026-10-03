@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub(super) struct Cloud {
+    pool: Option<sqlx::PgPool>,
     pub(super) ecs: Aliyun,
     vpc: Aliyun,
     pub(super) bss: Aliyun,
@@ -14,8 +15,9 @@ pub(super) struct Cloud {
     cdt: Aliyun,
 }
 impl Cloud {
-    pub fn new() -> Result<Self, Failure> {
+    pub fn new(pool: &sqlx::PgPool) -> Result<Self, Failure> {
         Ok(Self {
+            pool: Some(pool.clone()),
             ecs: Aliyun::new("ecs")?,
             vpc: Aliyun::new("vpc")?,
             bss: Aliyun::new("bss")?,
@@ -26,6 +28,7 @@ impl Cloud {
     #[cfg(test)]
     pub fn local(endpoint: &str) -> Self {
         Self {
+            pool: None,
             ecs: Aliyun::local("ecs", endpoint),
             vpc: Aliyun::local("vpc", endpoint),
             bss: Aliyun::local("bss", endpoint),
@@ -33,7 +36,48 @@ impl Cloud {
             cdt: Aliyun::local("cdt", endpoint),
         }
     }
+    pub(super) async fn resolved_account(&self, account: &Account) -> Result<Account, Failure> {
+        let mut resolved = account.clone();
+        if let Some(id) = account.credential_id {
+            let pool = self
+                .pool
+                .as_ref()
+                .ok_or(Failure::from("credential_unavailable"))?;
+            let value = crate::control_center::credentials::resolve_reference_pool(
+                pool,
+                id,
+                "cloud",
+                &format!("alicloud:{}", account.id),
+            )
+            .await
+            .map_err(|_| Failure::from("credential_unavailable"))?;
+            if value
+                .get("provider")
+                .and_then(Value::as_str)
+                .is_some_and(|v| !matches!(v, "alicloud" | "aliyun"))
+            {
+                return Err("credential_invalid".into());
+            }
+            let key = value["access_key_id"]
+                .as_str()
+                .filter(|v| crate::plugins::cloud_api::credential(v))
+                .ok_or(Failure::from("credential_invalid"))?;
+            let secret = value["access_key_secret"]
+                .as_str()
+                .filter(|v| crate::plugins::cloud_api::credential(v))
+                .ok_or(Failure::from("credential_invalid"))?;
+            resolved.access_key_id = key.into();
+            resolved.access_key_secret = secret.into();
+        } else if !crate::plugins::cloud_api::credential(&account.access_key_id)
+            || !crate::plugins::cloud_api::credential(&account.access_key_secret)
+        {
+            return Err("credential_invalid".into());
+        }
+        Ok(resolved)
+    }
     pub async fn bill(&self, account: &Account, now: i64) -> Result<billing::Bill, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let service = if account.site == "international" {
             &self.bss_international
         } else {
@@ -47,6 +91,8 @@ impl Cloud {
         .unwrap_or(Err("request_timeout".into()))
     }
     pub async fn traffic(&self, account: &Account, now: i64) -> Result<billing::Traffic, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let result = self
             .cdt
             .call(
@@ -63,6 +109,8 @@ impl Cloud {
         account: &Account,
         resource: &Resource,
     ) -> Result<Snapshot, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let (service, action, params) = if resource.kind == "ecs" {
             (
                 &self.ecs,
@@ -103,6 +151,8 @@ impl Cloud {
         target: &Target,
         operation_id: Uuid,
     ) -> Result<String, Failure> {
+        let resolved = self.resolved_account(account).await?;
+        let account = &resolved;
         let (service, action, mut params) = if resource.kind == "ecs" {
             (
                 &self.ecs,

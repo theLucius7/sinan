@@ -10,7 +10,10 @@ static NODE_IPQUALITY: nodequality::node_queries::NodeIpQualityPlugin =
     nodequality::node_queries::NodeIpQualityPlugin;
 static TCPQUALITY: tcpquality::TcpQualityPlugin = tcpquality::TcpQualityPlugin;
 static IPQUALITY: ipquality::IpQualityPlugin = ipquality::IpQualityPlugin;
-static REGISTERED: [&dyn DiagnosticPlugin; 3] = [&NODEQUALITY, &TCPQUALITY, &IPQUALITY];
+static NETWORK_WORKBENCH: crate::network_workbench::NetworkWorkbenchPlugin =
+    crate::network_workbench::NetworkWorkbenchPlugin;
+static REGISTERED: [&dyn DiagnosticPlugin; 4] =
+    [&NODEQUALITY, &TCPQUALITY, &IPQUALITY, &NETWORK_WORKBENCH];
 pub fn all() -> &'static [&'static dyn DiagnosticPlugin] {
     &REGISTERED
 }

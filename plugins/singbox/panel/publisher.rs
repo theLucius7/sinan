@@ -13,26 +13,49 @@ const DUE: &str = "dirty_at <= FLOOR(EXTRACT(EPOCH FROM clock_timestamp())*1000)
 pub async fn run(state: AppState) {
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut next_maintenance = 0;
+    let mut maintenance_healthy = false;
     loop {
         interval.tick().await;
+        let mut failed = Vec::new();
         if let Err(error) = super::entitlements::refresh(&state.pool, now_timestamp()).await {
             tracing::error!(%error, "package eligibility refresh failed; will retry");
+            failed.push("entitlements");
         }
         if let Err(_error) = super::ordered_paths::lifecycle::tick(&state).await {
             tracing::error!("ordered path transition failed; durable work retained");
+            failed.push("ordered-path-lifecycle");
         }
         if let Err(error) = super::sources::refresh_due(&state).await {
             tracing::error!(%error, "subscription source refresh failed; will retry");
+            failed.push("source-refresh");
         }
         if let Err(error) = super::mixed_paths::follow_updates(&state).await {
             tracing::error!(%error, "path source update failed; current versions retained");
+            failed.push("path-follow");
         }
         if let Err(error) = super::mixed_paths::advance(&state).await {
             tracing::error!(%error, "path publication transition failed; will retry");
+            failed.push("path-publication");
         }
         if let Err(error) = publish_due(&state).await {
             tracing::error!(%error, "configuration publication failed; pending work retained");
+            failed.push("configuration-publication");
         }
+        if now_timestamp() >= next_maintenance {
+            maintenance_healthy = match super::operations_workflows::maintenance(&state).await {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(%error,"proxy operation retention failed; work retained");
+                    false
+                }
+            };
+            next_maintenance = now_timestamp() + 30;
+        }
+        if !maintenance_healthy {
+            failed.push("operation-retention");
+        }
+        if let Err(error)=crate::control_center::system::heartbeat(&state.pool,"sing-box",if failed.is_empty(){"healthy"}else{"failed"},serde_json::json!({"source":"plugin-publisher-cycle","failed_steps":failed,"checked_steps":["entitlements","ordered-path-lifecycle","source-refresh","path-follow","path-publication","configuration-publication"],"retention_checked_every_seconds":30})).await { tracing::warn!(%error,"proxy publisher heartbeat unavailable"); }
     }
 }
 
@@ -194,7 +217,11 @@ async fn publish_server_transaction(
     let hash = crate::auth::hash_token(&bundle);
     let previous = sqlx::query("SELECT rev,bundle_sha256 FROM deployments WHERE server_id=$1 AND module=$2 ORDER BY rev DESC LIMIT 1")
         .bind(server_id).bind(MODULE).fetch_optional(&mut *tx).await?;
-    if let Some(previous) = previous.filter(|row| row.get::<String, _>("bundle_sha256") == hash) {
+    let previous_revision = previous.as_ref().map(|row| row.get::<i64, _>("rev"));
+    let force_runtime_candidate:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_runtime_rollout_members m JOIN singbox_runtime_rollouts r ON r.id=m.rollout_id WHERE m.server_id=$1 AND m.baseline_revision>=$2 AND r.completed_at IS NULL)").bind(server_id).bind(previous_revision).fetch_one(&mut *tx).await?;
+    if let Some(previous) = previous
+        .filter(|row| row.get::<String, _>("bundle_sha256") == hash && !force_runtime_candidate)
+    {
         // Public display metadata is separate from immutable accounting/path evidence.
         super::ordered_paths::publication::record(
             &mut tx,
@@ -226,6 +253,22 @@ async fn publish_server_transaction(
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
+        return Ok(None);
+    }
+    let changed =
+        super::operations_workflows::ordinary_shape_changes_tx(&mut tx, server_id, &plan.nodes)
+            .await?;
+    if !changed.is_empty()
+        && !super::operations_workflows::publisher_ready_tx(state, server_id, &mut tx).await?
+    {
+        // Roll back plan bookkeeping as well as deployment writes. The dirty
+        // desired state remains visible until a current preflight is confirmed.
+        tx.rollback().await?;
+        tracing::debug!(
+            server_id,
+            changed_node_count = changed.len(),
+            "configuration awaits confirmed deployment preflight"
+        );
         return Ok(None);
     }
     let rev = manifest_rev

@@ -3,13 +3,23 @@ mod business_support;
 #[path = "../../protocol/tests/support/release.rs"]
 mod release_support;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use business_support::TestPanel;
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
 const TOKEN: &str = "TEST_ONLY_CLOUDFLARE_TOKEN";
+
+async fn prove_cookie(pool: &PgPool, cookie: &str) -> Result<()> {
+    let token = cookie
+        .strip_prefix("sinan_session=")
+        .context("test session cookie")?;
+    let now = sinan_protocol::now_timestamp();
+    sqlx::query("INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash) DO UPDATE SET verified_at=$2,expires_at=$3")
+        .bind(sinan_panel::auth::hash_token(token)).bind(now).bind(now + 300).execute(pool).await?;
+    Ok(())
+}
 
 fn input(server: i64) -> Value {
     json!({"config":{"name":"测试解析","server_id":server,"zone_id":"00000000000000000000000000000001","record_name":"Node.EXAMPLE.com.","record_type":"A","ttl":300,"proxied":false,"interval_secs":300,"enabled":false},"api_token":TOKEN})
@@ -21,6 +31,7 @@ async fn dual_stack_creation_is_atomic_and_redacts_all_provider_credentials(
 ) -> Result<()> {
     let panel = TestPanel::start(pool.clone()).await?;
     let cookie = panel.admin_cookie().await?;
+    prove_cookie(&pool, &cookie).await?;
     let server = panel.create_server(&cookie, "TEST_ONLY dual stack").await?;
     panel
         .admin(
@@ -305,6 +316,21 @@ async fn administrator_crud_redacts_credentials_guards_revisions_and_never_delet
             .await?,
         "TEST_ONLY_REPLACEMENT_TOKEN"
     );
+    let session_token = cookie
+        .strip_prefix("sinan_session=")
+        .context("test session cookie")?;
+    sqlx::query("DELETE FROM administrator_reauth WHERE session_hash=$1")
+        .bind(sinan_panel::auth::hash_token(session_token))
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        panel
+            .admin(Method::DELETE, &path, &cookie, None)
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    prove_cookie(&pool, &cookie).await?;
     sqlx::query("UPDATE ddns_rules SET lease_until=$1")
         .bind(sinan_protocol::now_timestamp() + 60)
         .execute(&pool)

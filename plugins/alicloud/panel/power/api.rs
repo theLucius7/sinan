@@ -107,7 +107,7 @@ async fn preview(
         ));
     }
     operations::idle(&mut tx, id).await?;
-    let cloud = Cloud::new().map_err(failure)?;
+    let cloud = Cloud::new(&state.pool).map_err(failure)?;
     let before = cloud.power_state(&account, &r).await.map_err(failure)?;
     before
         .validate(&input.action, &input.stop_mode)

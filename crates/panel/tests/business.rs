@@ -243,6 +243,7 @@ async fn publication_debounces_and_deduplicates_native_configurations(pool: PgPo
     let node = panel.create_node(&cookie, server, "Node").await?;
     let user = panel.create_user(&cookie, "User").await?;
     panel.grant(&cookie, id(&user)?, id(&node)?).await?;
+    panel.prepare_deployment_preflights().await?;
     publisher::publish_due(&panel.state).await?;
     assert_eq!(latest_revision(&pool, server).await?, 0);
     let dirty: i64 = sqlx::query_scalar("SELECT dirty_at FROM servers WHERE id=$1")

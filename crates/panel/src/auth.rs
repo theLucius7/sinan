@@ -24,7 +24,7 @@ use std::net::SocketAddr;
 pub(crate) mod passkeys;
 pub(crate) mod proof;
 pub(crate) mod rate_limit;
-mod security;
+pub(crate) mod security;
 mod totp;
 
 pub use security::{totp_confirm, totp_disable, totp_setup, totp_status};
@@ -75,6 +75,8 @@ pub async fn ensure_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Resu
     .bind(hash)
     .execute(pool)
     .await?;
+    sqlx::query("INSERT INTO administrator_profiles(admin_id,login_name,display_name,role,all_servers,created_at,updated_at) VALUES(1,'admin','所有者','owner',true,$1,$1) ON CONFLICT(admin_id) DO NOTHING")
+        .bind(now_timestamp()).execute(pool).await?;
     Ok(())
 }
 
@@ -89,9 +91,9 @@ pub async fn purge_expired_sessions(pool: &PgPool, now: i64) -> anyhow::Result<(
 }
 
 pub async fn require_admin(state: &AppState, headers: &HeaderMap) -> ApiResult<i64> {
-    let token = cookie_token(headers).ok_or(ApiError::Unauthorized)?;
-    sqlx::query_scalar::<_, i64>("SELECT admin_id FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL AND expires_at > $2")
-        .bind(hash_token(token)).bind(now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::Unauthorized)
+    Ok(crate::control_center::authenticate(state, headers)
+        .await?
+        .admin_id)
 }
 
 pub async fn require_agent(state: &AppState, headers: &HeaderMap) -> ApiResult<i64> {
@@ -112,15 +114,17 @@ pub struct LoginRequest {
     pub totp_code: Option<String>,
 }
 
-async fn verified_password(
+pub(crate) async fn verified_admin_password(
     state: &AppState,
+    admin_id: i64,
     password: String,
     permit: tokio::sync::OwnedSemaphorePermit,
 ) -> ApiResult<(Option<String>, tokio::sync::OwnedSemaphorePermit)> {
     if password.is_empty() || password.len() > 1024 {
         return Ok((None, permit));
     }
-    let hash: String = sqlx::query_scalar("SELECT password_hash FROM admins WHERE id = 1")
+    let hash: String = sqlx::query_scalar("SELECT password_hash FROM admins WHERE id = $1")
+        .bind(admin_id)
         .fetch_one(&state.pool)
         .await?;
     let expected = hash.clone();
@@ -137,10 +141,39 @@ async fn verified_password(
     Ok((verified.then_some(hash), permit))
 }
 
+#[derive(Deserialize)]
+pub struct NamedLoginRequest {
+    #[serde(default)]
+    pub login_name: Option<String>,
+    #[serde(flatten)]
+    pub credentials: LoginRequest,
+}
+
 pub async fn login(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    Json(request): Json<LoginRequest>,
+    Json(request): Json<NamedLoginRequest>,
+) -> ApiResult<Response> {
+    let login_name = request
+        .login_name
+        .as_deref()
+        .unwrap_or("admin")
+        .chars()
+        .take(100)
+        .collect::<String>();
+    let result = login_inner(state.clone(), peer, request).await;
+    if result.is_err()
+        && let Err(error)=sqlx::query("INSERT INTO management_audit(action,object_path,request_diff,result,occurred_at) VALUES('login','/api/login',$1,$2,$3)")
+            .bind(json!({"login_name":login_name,"factor":"password"})).bind(json!({"phase":"authentication-denied","success":false})).bind(now_timestamp()).execute(&state.pool).await {
+            tracing::warn!(%error,"authentication denial audit failed");
+    }
+    result
+}
+
+async fn login_inner(
+    state: AppState,
+    peer: SocketAddr,
+    request: NamedLoginRequest,
 ) -> ApiResult<Response> {
     let permit = state
         .login_permits
@@ -148,15 +181,29 @@ pub async fn login(
         .try_acquire_owned()
         .map_err(|_| ApiError::Busy)?;
     rate_limit::consume(&state.pool, peer).await?;
-    let (verified_hash, _permit) = verified_password(&state, request.password, permit).await?;
+    let login_name = request.login_name.as_deref().unwrap_or("admin");
+    if login_name.is_empty() || login_name.len() > 100 {
+        return Err(ApiError::Unauthorized);
+    }
+    let admin_id: i64 = sqlx::query_scalar(
+        "SELECT admin_id FROM administrator_profiles WHERE login_name=$1 AND enabled",
+    )
+    .bind(login_name)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::Unauthorized)?;
+    let request = request.credentials;
+    let (verified_hash, _permit) =
+        verified_admin_password(&state, admin_id, request.password, permit).await?;
     let verified_hash = verified_hash.ok_or(ApiError::Unauthorized)?;
     let token = random_token();
     let mut transaction = state.pool.begin().await?;
     let admin = sqlx::query(
-        "SELECT password_hash, totp_secret, totp_last_step FROM admins WHERE id = 1 FOR UPDATE",
+        "SELECT a.password_hash,a.totp_secret,a.totp_last_step FROM admins a JOIN administrator_profiles p ON p.admin_id=a.id WHERE a.id=$1 AND p.enabled FOR UPDATE OF a,p",
     )
-    .fetch_one(&mut *transaction)
-    .await?;
+    .bind(admin_id)
+    .fetch_optional(&mut *transaction)
+    .await?.ok_or(ApiError::Unauthorized)?;
     let now = now_timestamp();
     if admin.try_get::<String, _>("password_hash")? != verified_hash {
         return Err(ApiError::Unauthorized);
@@ -169,8 +216,9 @@ pub async fn login(
             admin.try_get("totp_last_step")?,
         )
         .ok_or(ApiError::Unauthorized)?;
-        sqlx::query("UPDATE admins SET totp_last_step = $1 WHERE id = 1")
+        sqlx::query("UPDATE admins SET totp_last_step = $1 WHERE id = $2")
             .bind(step)
+            .bind(admin_id)
             .execute(&mut *transaction)
             .await?;
     }
@@ -178,13 +226,24 @@ pub async fn login(
         .bind(now)
         .execute(&mut *transaction)
         .await?;
-    sqlx::query("INSERT INTO sessions (token_hash, admin_id, expires_at) VALUES ($1, 1, $2)")
+    sqlx::query("INSERT INTO sessions (token_hash, admin_id, expires_at) VALUES ($1, $2, $3)")
         .bind(hash_token(&token))
+        .bind(admin_id)
         .bind(now + ADMIN_SESSION_SECONDS)
         .execute(&mut *transaction)
         .await?;
+    sqlx::query(
+        "INSERT INTO administrator_reauth(session_hash,verified_at,expires_at) VALUES($1,$2,$3)",
+    )
+    .bind(hash_token(&token))
+    .bind(now)
+    .bind(now + 300)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'login','/api/login',$2,$3,$4)")
+        .bind(admin_id).bind(json!({"factor":"password"})).bind(json!({"phase":"authenticated","success":true})).bind(now).execute(&mut *transaction).await?;
     transaction.commit().await?;
-    let mut response = Json(json!({"id": 1})).into_response();
+    let mut response = Json(json!({"id": admin_id})).into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
         session_cookie(&state, &token, ADMIN_SESSION_SECONDS)?,
@@ -197,10 +256,15 @@ pub async fn login(
 
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     if let Some(token) = cookie_token(&headers) {
-        sqlx::query("DELETE FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL")
+        let mut tx = state.pool.begin().await?;
+        let admin:Option<i64>=sqlx::query_scalar("DELETE FROM sessions WHERE token_hash = $1 AND admin_id IS NOT NULL RETURNING admin_id")
             .bind(hash_token(token))
-            .execute(&state.pool)
+            .fetch_optional(&mut *tx)
             .await?;
+        if let Some(admin) = admin {
+            sqlx::query("INSERT INTO management_audit(admin_id,action,object_path,request_diff,result,occurred_at) VALUES($1,'logout','/api/logout','{}',$2,$3)").bind(admin).bind(json!({"phase":"session-revoked","success":true})).bind(now_timestamp()).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
     }
     let mut response = Json(json!({"ok": true})).into_response();
     response
@@ -210,8 +274,8 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
 }
 
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
-    let id = require_admin(&state, &headers).await?;
-    Ok(Json(json!({"id": id})))
+    let actor = crate::control_center::authenticate(&state, &headers).await?;
+    Ok(Json(json!({"id": actor.admin_id,"administrator":actor})))
 }
 
 fn session_cookie(state: &AppState, token: &str, lifetime: i64) -> ApiResult<HeaderValue> {

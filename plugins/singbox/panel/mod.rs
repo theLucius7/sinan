@@ -11,6 +11,7 @@ pub mod mixed_paths;
 mod node_protocol;
 mod node_settings;
 pub mod nodes;
+pub mod operations_workflows;
 pub mod ordered_paths;
 pub mod packages;
 pub mod policies;
@@ -19,6 +20,7 @@ pub mod proxy_resources;
 pub mod proxy_users;
 pub mod publisher;
 pub mod runtime_operations;
+mod secret_access;
 pub mod settings;
 pub mod sources;
 pub mod statistics;
@@ -121,6 +123,7 @@ pub fn router() -> Router<AppState> {
         .merge(sources::router())
         .merge(portal::router())
         .merge(mixed_paths::router());
+    let management = management.merge(operations_workflows::router());
     Router::new()
         .nest(
             "/api/plugins/sing-box",

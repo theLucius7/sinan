@@ -27,15 +27,25 @@ pub fn routes() -> Router<AppState> {
         .route("/api/plugins/ddns/rules/{id}", patch(update).delete(remove))
         .route("/api/plugins/ddns/rules/{id}/sync", post(sync))
         .merge(super::settings::routes())
+        .merge(super::lifecycle::routes())
+        .merge(super::migration::routes())
+        .merge(super::dns_accounts::routes())
+        .merge(super::dns_records::routes())
+        .merge(super::dns_resolvers::routes())
 }
 
 async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Vec<Value>>> {
     auth::require_admin(&state, &headers).await?;
+    crate::control_center::require_capability(&state, &headers, "dns:read").await?;
+    let actor = crate::control_center::authenticate(&state, &headers).await?;
     let rules = sqlx::query_as::<_, Rule>("SELECT * FROM ddns_rules ORDER BY id")
         .fetch_all(&state.pool)
         .await?;
     let mut result = Vec::new();
     for rule in rules {
+        if !actor.allows_server(rule.config.server_id) {
+            continue;
+        }
         result.push(model::view(&state.pool, rule).await?);
     }
     Ok(Json(result))
@@ -70,6 +80,9 @@ async fn create(
     Json(input): Json<Write>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     auth::require_admin(&state, &headers).await?;
+    crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
+        .await?;
+    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
     let record_types = [input.config.record_type.clone()];
     let mut rules = create_rules(&state, input, &record_types).await?;
     Ok((StatusCode::CREATED, Json(rules.remove(0))))
@@ -81,6 +94,9 @@ async fn create_dual_stack(
     Json(input): Json<Write>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     auth::require_admin(&state, &headers).await?;
+    crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
+        .await?;
+    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
     let rules = create_rules(&state, input, &["A".into(), "AAAA".into()]).await?;
     Ok((StatusCode::CREATED, Json(json!({"rules": rules}))))
 }
@@ -92,6 +108,7 @@ async fn create_rules(
 ) -> ApiResult<Vec<Value>> {
     input.config.normalize()?;
     valid_server(state, &input.config).await?;
+    super::credentials::validate_reference(&state.pool, &input.config).await?;
     let (token, key, secret) = credentials(&input, None)?;
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(739104823)")
@@ -108,6 +125,7 @@ async fn create_rules(
         let id = Uuid::new_v4();
         let mut config = input.config.clone();
         config.record_type.clone_from(record_type);
+        config.normalize()?;
         let result =
         sqlx::query("INSERT INTO ddns_rules(id,server_id,config,api_token,access_key_id,access_key_secret) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(id)
@@ -148,6 +166,11 @@ async fn update(
     input.config.normalize()?;
     let mut tx = state.pool.begin().await?;
     let previous = editable(&mut tx, id).await?;
+    crate::control_center::require_server(&state, &headers, previous.config.server_id, "dns:write")
+        .await?;
+    crate::control_center::require_server(&state, &headers, input.config.server_id, "dns:write")
+        .await?;
+    super::credentials::authorize_reference(&state, &headers, &input.config).await?;
     if input.revision != Some(previous.revision) {
         return Err(ApiError::Conflict("规则已被修改，请刷新后重试".into()));
     }
@@ -158,13 +181,14 @@ async fn update(
         || input.config.record_type != previous.config.record_type
     {
         return Err(ApiError::BadRequest(
-            "提供方、Zone、域名、类型和线路创建后固定，请另建规则".into(),
+            "请通过批量迁移与编辑预览更换提供方、Zone、域名、类型或线路".into(),
         ));
     }
     // A retired binding may still be paused or have its secret replaced.
     if input.config.enabled || input.config.server_id != previous.config.server_id {
         valid_server(&state, &input.config).await?;
     }
+    super::credentials::validate_reference(&state.pool, &input.config).await?;
     let (token, key, secret) = credentials(&input, Some(&previous))?;
     sqlx::query("UPDATE ddns_rules SET server_id=$2,config=$3,api_token=$4,access_key_id=$5,access_key_secret=$6,revision=revision+1,next_run_at=GREATEST(0,COALESCE(attempted_at,0)+60),failures=0,status='pending',error_code=NULL,lease_id=NULL,lease_until=0 WHERE id=$1")
         .bind(id).bind(input.config.server_id).bind(json!(input.config)).bind(token).bind(key).bind(secret).execute(&mut *tx).await?;
@@ -182,6 +206,17 @@ fn credentials(input: &Write, previous: Option<&Rule>) -> ApiResult<(String, Str
             .filter(|v| !v.is_empty())
             .map(str::to_owned)
     };
+    if input.config.credential_id.is_some() || input.config.account_id.is_some() {
+        if supplied(&input.api_token).is_some()
+            || supplied(&input.access_key_id).is_some()
+            || supplied(&input.access_key_secret).is_some()
+        {
+            return Err(ApiError::BadRequest(
+                "引用凭据中心时请移除表单中的明文凭据".into(),
+            ));
+        }
+        return Ok((String::new(), String::new(), String::new()));
+    }
     if input.config.provider == Provider::Cloudflare {
         if supplied(&input.access_key_id).is_some() || supplied(&input.access_key_secret).is_some()
         {
@@ -225,7 +260,9 @@ async fn remove(
 ) -> ApiResult<StatusCode> {
     auth::require_admin(&state, &headers).await?;
     let mut tx = state.pool.begin().await?;
-    editable(&mut tx, id).await?;
+    let rule = editable(&mut tx, id).await?;
+    crate::control_center::require_server(&state, &headers, rule.config.server_id, "dns:write")
+        .await?;
     sqlx::query("DELETE FROM ddns_rules WHERE id=$1")
         .bind(id)
         .execute(&mut *tx)
@@ -240,6 +277,9 @@ async fn sync(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Value>> {
     auth::require_admin(&state, &headers).await?;
+    let rule = load(&state.pool, id).await?;
+    crate::control_center::require_server(&state, &headers, rule.config.server_id, "dns:write")
+        .await?;
     worker::sync(&state.pool, id, true).await?;
     Ok(Json(
         model::view(&state.pool, load(&state.pool, id).await?).await?,

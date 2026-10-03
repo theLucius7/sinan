@@ -44,6 +44,8 @@ fn known_messages() -> Vec<Message> {
             libc: None,
             runtime_libc: None,
             ip_addresses: vec!["192.0.2.10".into(), "2001:db8::10".into()],
+            interface_addresses: BTreeMap::new(),
+            discovered_public_ips: Vec::new(),
             system: Some("Debian GNU/Linux 12".into()),
             kernel: Some("6.1.0".into()),
             arch: Some("amd64".into()),
@@ -350,6 +352,7 @@ fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
     budgeted.resource_budget = Some(sinan_protocol::DiagnosticResourceBudget {
         memory_max: 64 * 1024 * 1024,
         tasks_max: 32,
+        cpu_max_percent: None,
         cpu_weight: 10,
         io_weight: 10,
         oom_score_adjust: 500,
@@ -357,6 +360,23 @@ fn diagnostic_http_payloads_roundtrip_and_accept_additive_fields() {
     let mut unsafe_budget = serde_json::to_value(&budgeted).unwrap();
     unsafe_budget["resource_budget"]["command"] = json!("arbitrary-command");
     assert!(serde_json::from_value::<DiagnosticJob>(unsafe_budget).is_err());
+    let legacy_budget = serde_json::to_value(&budgeted).unwrap();
+    assert!(
+        legacy_budget["resource_budget"]
+            .get("cpu_max_percent")
+            .is_none()
+    );
+    assert_eq!(
+        serde_json::from_value::<DiagnosticJob>(legacy_budget).unwrap(),
+        budgeted
+    );
+    budgeted.resource_budget.as_mut().unwrap().cpu_max_percent = Some(20);
+    assert!(budgeted.resource_budget.as_ref().unwrap().valid());
+    for rejected in [0, 6401] {
+        let mut invalid = budgeted.resource_budget.clone().unwrap();
+        invalid.cpu_max_percent = Some(rejected);
+        assert!(!invalid.valid());
+    }
     roundtrip(budgeted);
     let mut wire = serde_json::to_value(&job).unwrap();
     wire["future_option"] = json!(true);

@@ -87,7 +87,7 @@ async fn support_probe_is_bounded_and_fails_closed_at_every_step() -> Result<()>
         "unit": format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
         "program": "/usr/bin/true", "args": [], "working_directory": "/tmp", "timeout_secs": 5,
     }))?;
-    for fail_at in 1..=3 {
+    for fail_at in 1..=4 {
         for failure in ["failed", "timeout", "truncated", "unknown"] {
             let replacement = Execution {
                 output: CommandOutput {

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct BillRow {
     pub instance_id: String,
     pub region: String,
@@ -16,7 +16,7 @@ pub(super) struct BillRow {
     pub currency: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct Bill {
     pub month: String,
     pub queried_at: i64,
@@ -179,14 +179,14 @@ pub(super) fn exceeded(account: &Account, now: i64) -> bool {
         })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct Traffic {
     pub queried_at: i64,
     pub mainland_bytes: String,
     pub overseas_bytes: String,
     pub regions: Vec<TrafficRegion>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct TrafficRegion {
     pub region: String,
     pub bytes: String,

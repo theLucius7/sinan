@@ -9,7 +9,7 @@ use sinan_adapter_nodequality::NodeQualityAdapter;
 use sinan_adapter_sdk::{Adapter, DiagnosticAdapter, Privileged, ServiceManager};
 use sinan_adapter_singbox::SingboxAdapter;
 #[cfg(target_os = "linux")]
-use sinan_adapter_tcpquality::TcpQualityAdapter;
+use sinan_adapter_tcpquality::{TcpQualityAdapter, WorkbenchAdapter};
 use sinan_agent_core::{
     Config, identity,
     system::{ServiceBackend, SystemOps, SystemServiceManager},
@@ -149,6 +149,7 @@ async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                 vec![
                     Arc::new(NodeQualityAdapter::new()),
                     Arc::new(TcpQualityAdapter::new()),
+                    Arc::new(WorkbenchAdapter::new()),
                     Arc::new(IpQualityAdapter::new()),
                 ]
             };

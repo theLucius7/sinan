@@ -1,4 +1,4 @@
-use super::{cookie_token, hash_token, rate_limit, require_admin, totp, verified_password};
+use super::{cookie_token, hash_token, rate_limit, require_admin, totp, verified_admin_password};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
@@ -48,18 +48,14 @@ pub(super) async fn locked_admin(
     tx: &mut Transaction<'_, Postgres>,
     session: &str,
 ) -> ApiResult<PgRow> {
-    let row = sqlx::query("SELECT * FROM admins WHERE id = 1 FOR UPDATE")
-        .fetch_one(&mut **tx)
-        .await?;
-    let valid = sqlx::query("SELECT admin_id FROM sessions WHERE token_hash = $1 AND admin_id = 1 AND expires_at > $2 FOR UPDATE")
-        .bind(session).bind(now_timestamp()).fetch_optional(&mut **tx).await?;
-    if valid.is_none() {
-        return Err(ApiError::Unauthorized);
-    }
+    let admin_id: i64 = sqlx::query_scalar("SELECT admin_id FROM sessions WHERE token_hash=$1 AND admin_id IS NOT NULL AND expires_at>$2 FOR UPDATE")
+        .bind(session).bind(now_timestamp()).fetch_optional(&mut **tx).await?.ok_or(ApiError::Unauthorized)?;
+    let row = sqlx::query("SELECT a.* FROM admins a JOIN administrator_profiles p ON p.admin_id=a.id WHERE a.id=$1 AND p.enabled FOR UPDATE OF a,p")
+        .bind(admin_id).fetch_optional(&mut **tx).await?.ok_or(ApiError::Unauthorized)?;
     Ok(row)
 }
 
-pub(super) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
+pub(crate) fn session_hash(headers: &HeaderMap) -> ApiResult<String> {
     cookie_token(headers)
         .map(hash_token)
         .ok_or(ApiError::Unauthorized)
@@ -69,19 +65,29 @@ pub(super) async fn revoke_other_sessions(
     tx: &mut Transaction<'_, Postgres>,
     current: &str,
 ) -> ApiResult<()> {
-    crate::passkeys::revoke(tx, crate::passkeys::ADMIN).await?;
-    sqlx::query("DELETE FROM sessions WHERE admin_id = 1 AND token_hash <> $1")
+    let admin_id: i64 = sqlx::query_scalar(
+        "SELECT admin_id FROM sessions WHERE token_hash=$1 AND admin_id IS NOT NULL",
+    )
+    .bind(current)
+    .fetch_one(&mut **tx)
+    .await?;
+    if admin_id == 1 {
+        crate::passkeys::revoke(tx, crate::passkeys::ADMIN).await?;
+    }
+    sqlx::query("DELETE FROM sessions WHERE admin_id = $2 AND token_hash <> $1")
         .bind(current)
+        .bind(admin_id)
         .execute(&mut **tx)
         .await?;
     Ok(())
 }
 
 pub async fn totp_status(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    let admin_id = require_admin(&state, &headers).await?;
     let row = sqlx::query(
-        "SELECT totp_secret IS NOT NULL AS enabled, totp_pending_expires FROM admins WHERE id = 1",
+        "SELECT totp_secret IS NOT NULL AS enabled, totp_pending_expires FROM admins WHERE id = $1",
     )
+    .bind(admin_id)
     .fetch_one(&state.pool)
     .await?;
     let pending = row
@@ -98,7 +104,7 @@ pub async fn totp_setup(
     headers: HeaderMap,
     Json(request): Json<SetupRequest>,
 ) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    let admin_id = require_admin(&state, &headers).await?;
     let session = session_hash(&headers)?;
     let permit = state
         .login_permits
@@ -106,7 +112,8 @@ pub async fn totp_setup(
         .try_acquire_owned()
         .map_err(|_| ApiError::Busy)?;
     rate_limit::consume(&state.pool, peer).await?;
-    let (hash, _permit) = verified_password(&state, request.password, permit).await?;
+    let (hash, _permit) =
+        verified_admin_password(&state, admin_id, request.password, permit).await?;
     let hash = hash.ok_or_else(|| ApiError::BadRequest("密码不正确".into()))?;
     let mut tx = state.pool.begin().await?;
     let row = locked_admin(&mut tx, &session).await?;
@@ -121,8 +128,8 @@ pub async fn totp_setup(
     let mut secret = [0_u8; 20];
     OsRng.fill_bytes(&mut secret);
     let expires = now_timestamp() + 300;
-    sqlx::query("UPDATE admins SET totp_pending_secret = $1, totp_pending_expires = $2, totp_pending_session = $3 WHERE id = 1")
-        .bind(secret.as_slice()).bind(expires).bind(&session).execute(&mut *tx).await?;
+    sqlx::query("UPDATE admins SET totp_pending_secret = $1, totp_pending_expires = $2, totp_pending_session = $3 WHERE id = $4")
+        .bind(secret.as_slice()).bind(expires).bind(&session).bind(admin_id).execute(&mut *tx).await?;
     tx.commit().await?;
     let secret = BASE32_NOPAD.encode(&secret);
     Ok(reply(
@@ -136,7 +143,7 @@ pub async fn totp_confirm(
     headers: HeaderMap,
     Json(request): Json<CodeRequest>,
 ) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    let admin_id = require_admin(&state, &headers).await?;
     let session = session_hash(&headers)?;
     let _permit = state
         .login_permits
@@ -165,8 +172,8 @@ pub async fn totp_confirm(
     }
     let step = totp::verify(&secret, &request.code, now, None)
         .ok_or_else(|| ApiError::BadRequest("验证码不正确或已过期".into()))?;
-    sqlx::query("UPDATE admins SET totp_secret = $1, totp_last_step = $2, totp_pending_secret = NULL, totp_pending_expires = NULL, totp_pending_session = NULL WHERE id = 1")
-        .bind(secret).bind(step).execute(&mut *tx).await?;
+    sqlx::query("UPDATE admins SET totp_secret = $1, totp_last_step = $2, totp_pending_secret = NULL, totp_pending_expires = NULL, totp_pending_session = NULL WHERE id = $3")
+        .bind(secret).bind(step).bind(admin_id).execute(&mut *tx).await?;
     revoke_other_sessions(&mut tx, &session).await?;
     tx.commit().await?;
     Ok(reply(json!({"enabled": true})))
@@ -178,7 +185,7 @@ pub async fn totp_disable(
     headers: HeaderMap,
     Json(request): Json<DisableRequest>,
 ) -> ApiResult<Response> {
-    require_admin(&state, &headers).await?;
+    let admin_id = require_admin(&state, &headers).await?;
     let session = session_hash(&headers)?;
     let permit = state
         .login_permits
@@ -186,7 +193,8 @@ pub async fn totp_disable(
         .try_acquire_owned()
         .map_err(|_| ApiError::Busy)?;
     rate_limit::consume(&state.pool, peer).await?;
-    let (hash, _permit) = verified_password(&state, request.password, permit).await?;
+    let (hash, _permit) =
+        verified_admin_password(&state, admin_id, request.password, permit).await?;
     let hash = hash.ok_or_else(|| ApiError::BadRequest("密码或验证码不正确".into()))?;
     let mut tx = state.pool.begin().await?;
     let row = locked_admin(&mut tx, &session).await?;
@@ -203,8 +211,8 @@ pub async fn totp_disable(
         row.try_get("totp_last_step")?,
     )
     .ok_or_else(|| ApiError::BadRequest("密码或验证码不正确、已过期或已使用".into()))?;
-    sqlx::query("UPDATE admins SET totp_secret = NULL, totp_last_step = NULL, totp_pending_secret = NULL, totp_pending_expires = NULL, totp_pending_session = NULL WHERE id = 1")
-        .execute(&mut *tx).await?;
+    sqlx::query("UPDATE admins SET totp_secret = NULL, totp_last_step = NULL, totp_pending_secret = NULL, totp_pending_expires = NULL, totp_pending_session = NULL WHERE id = $1")
+        .bind(admin_id).execute(&mut *tx).await?;
     revoke_other_sessions(&mut tx, &session).await?;
     tx.commit().await?;
     Ok(reply(json!({"enabled": false})))

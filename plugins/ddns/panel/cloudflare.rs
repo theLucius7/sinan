@@ -1,4 +1,7 @@
-use super::model::{Rule, domain, identifier};
+use super::{
+    lifecycle::{Snapshot, expected_matches},
+    model::{Rule, domain, identifier},
+};
 use futures_util::StreamExt;
 use reqwest::{Client, Method, Url};
 use serde::Deserialize;
@@ -24,7 +27,7 @@ pub(super) struct Outcome {
     pub status: &'static str,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Record {
     id: String,
     name: String,
@@ -38,6 +41,22 @@ struct Record {
     proxied: bool,
     #[serde(default)]
     comment: Option<String>,
+}
+
+impl Record {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            id: self.id.clone(),
+            name: domain(&self.name).unwrap_or_else(|| self.name.clone()),
+            kind: self.record_type.clone(),
+            line: String::new(),
+            values: vec![self.content.clone()],
+            ttl: u64::from(self.ttl),
+            proxied: self.proxied,
+            active: true,
+            marker: self.comment.clone(),
+        }
+    }
 }
 
 impl Cloudflare {
@@ -64,7 +83,7 @@ impl Cloudflare {
         client
     }
 
-    async fn call(
+    pub(super) async fn call(
         &self,
         method: Method,
         path: &str,
@@ -138,16 +157,7 @@ impl Cloudflare {
         Ok(envelope)
     }
 
-    pub async fn reconcile_guarded<G, Check, Checked>(
-        &self,
-        rule: &Rule,
-        ip: IpAddr,
-        mut check: Check,
-    ) -> Result<Outcome, Failure>
-    where
-        Check: FnMut() -> Checked,
-        Checked: Future<Output = Result<G, Failure>>,
-    {
+    async fn read_record(&self, rule: &Rule) -> Result<Option<Record>, Failure> {
         let config = &rule.config;
         if !identifier(&config.zone_id) {
             return Err("invalid_configuration".into());
@@ -215,6 +225,38 @@ impl Cloudflare {
         if matching.len() > 1 {
             return Err("record_conflict".into());
         }
+        let record = matching.first().copied();
+        if record.is_some_and(|record| {
+            rule.record_id.as_deref() != Some(record.id.as_str())
+                && record.comment.as_deref() != Some(format!("sinan-ddns:{}", rule.id).as_str())
+                && !config.adopt_existing
+        }) {
+            return Err("record_not_owned".into());
+        }
+        Ok(record.cloned())
+    }
+
+    pub(super) async fn inspect(&self, rule: &Rule) -> Result<Option<Snapshot>, Failure> {
+        Ok(self.read_record(rule).await?.as_ref().map(Record::snapshot))
+    }
+
+    pub(super) async fn reconcile_expected_guarded<G, Check, Checked>(
+        &self,
+        rule: &Rule,
+        ip: IpAddr,
+        expected: Option<&Snapshot>,
+        mut check: Check,
+    ) -> Result<Outcome, Failure>
+    where
+        Check: FnMut() -> Checked,
+        Checked: Future<Output = Result<G, Failure>>,
+    {
+        let config = &rule.config;
+        let record = self.read_record(rule).await?;
+        let current = record.as_ref().map(Record::snapshot);
+        expected_matches(current.as_ref(), expected)?;
+        let matching: Vec<_> = record.iter().collect();
+        let path = format!("zones/{}/dns_records", config.zone_id);
         let marker = format!("sinan-ddns:{}", rule.id);
         let ttl = if config.proxied { 1 } else { config.ttl };
         let (method, path, body, previous_id) = if let Some(record) = matching.first() {

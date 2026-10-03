@@ -1,7 +1,22 @@
 mod api;
 mod cloudflare;
+mod credentials;
+pub(crate) mod dns01;
+mod dns_accounts;
+mod dns_record_actions;
+mod dns_record_reconcile;
+mod dns_record_rollback;
+mod dns_record_spec;
+mod dns_records;
+mod dns_resolvers;
+mod dns_wire;
+mod history;
+mod lifecycle;
+mod migration;
 mod model;
+mod observation;
 mod providers;
+mod rollback;
 mod settings;
 #[cfg(test)]
 mod tests;

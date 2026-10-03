@@ -2,7 +2,7 @@
 
 自托管的中文服务器与代理节点控制面板。面板保存期望配置；Agent 主动连接，负责对账、应用恢复、系统遥测和命令执行。代理运行时由独立系统服务管理，Agent 重启时继续提供服务。
 
-[使用文档](docs/README.md) · [安装部署](docs/deploy.md) · [开发指南](docs/dev.md) · [代码目录](docs/repository.md) · [验证进度](PROGRESS.md)
+[使用文档](docs/README.md) · [安装部署](docs/deploy.md) · [开发指南](docs/dev.md) · [代码目录](docs/repository.md) · [验证进度](PROGRESS.md) · [平台扩展](docs/operations-expansion.md)
 
 ## 快速开始
 
@@ -33,6 +33,10 @@ python3 scripts/panel.py install --public-url https://panel.example.com
 服务器看板位于 `/#/dashboard`，旧 `/#/overview` 链接继续可用；后台统计仪表盘位于 `/#/statistics`。侧栏「插件目录」用于查找插件及分发版本，按服务器进入相应管理页。
 
 代理协议包括 VLESS + Reality、Hysteria2、Shadowsocks 2022、TUIC v5、AnyTLS、Naive 和 Snell v6。TLS 支持手动证书及自动申请、续期；节点可配置监听/公开端点、启停与高级参数，订阅链接可重置。通知只负责提醒；阿里云自动控制独立配置，默认关闭。
+
+## 平台扩展
+
+新增日常运维、网络与验机、网络与证书、批量运维与恢复、管理与安全入口；服务器详情进入时保留目标上下文。功能及工具、许可和实机验收条件见[扩展记录](docs/operations-expansion.md)。
 
 ## 部署与平台边界
 

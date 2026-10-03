@@ -25,6 +25,9 @@ pub struct DiagnosticJob {
 pub struct DiagnosticResourceBudget {
     pub memory_max: u64,
     pub tasks_max: u32,
+    /// Aggregate CPU ceiling: 100 is one logical CPU, independent of contention weight.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_max_percent: Option<u32>,
     pub cpu_weight: u16,
     pub io_weight: u16,
     pub oom_score_adjust: i16,
@@ -34,6 +37,9 @@ impl DiagnosticResourceBudget {
     pub fn valid(&self) -> bool {
         (16 * 1024 * 1024..=1024 * 1024 * 1024).contains(&self.memory_max)
             && (16..=256).contains(&self.tasks_max)
+            && self
+                .cpu_max_percent
+                .is_none_or(|value| (1..=6400).contains(&value))
             && (1..=100).contains(&self.cpu_weight)
             && (1..=100).contains(&self.io_weight)
             && (500..=1000).contains(&self.oom_score_adjust)
@@ -41,6 +47,7 @@ impl DiagnosticResourceBudget {
 }
 
 pub const DIAGNOSTIC_SERVICE_CAPABILITY: &str = "diagnostic:job-service";
+pub const DIAGNOSTIC_CPU_CEILING_CAPABILITY: &str = "diagnostic:cpu-quota:v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

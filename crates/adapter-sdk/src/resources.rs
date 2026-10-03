@@ -66,6 +66,15 @@ resource_value!(
     "A finite, positive systemd cgroup thread/process limit; defaults to 128."
 );
 resource_value!(
+    CpuMaxPercent,
+    u32,
+    "u32",
+    1,
+    6400,
+    100,
+    "An aggregate CPU bandwidth ceiling: 100 is one logical CPU; defaults to 100."
+);
+resource_value!(
     CpuWeight,
     u16,
     "u16",
@@ -105,6 +114,10 @@ mod tests {
         for value in [0, u32::MAX] {
             assert!(TasksMax::new(value).is_err());
         }
+        for value in [0, 6401, u32::MAX] {
+            assert!(CpuMaxPercent::new(value).is_err());
+        }
+        assert_eq!(CpuMaxPercent::default().get(), 100);
         for value in [0, 10001, u16::MAX] {
             assert!(CpuWeight::new(value).is_err());
             assert!(IoWeight::new(value).is_err());

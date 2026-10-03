@@ -20,6 +20,10 @@ use tokio::{net::TcpListener, task::JoinHandle, time::timeout};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 use uuid::Uuid;
 
+pub mod deployment;
+#[path = "../release_fixture/mod.rs"]
+pub mod release_fixture;
+
 pub type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 const PASSWORD: &str = "business-test-password";
 
@@ -264,10 +268,16 @@ impl TestPanel {
     }
 
     pub async fn publish_now(&self) -> Result<()> {
+        self.prepare_deployment_preflights().await?;
         sqlx::query("UPDATE servers SET dirty_at=0 WHERE dirty_at IS NOT NULL")
             .execute(&self.state.pool)
             .await?;
         sinan_panel::publisher::publish_due(&self.state).await
+    }
+
+    /// Complete the normal deployment gate with controlled TEST_ONLY observations.
+    pub async fn prepare_deployment_preflights(&self) -> Result<()> {
+        deployment::prepare(self).await
     }
 
     pub async fn authenticated_device(

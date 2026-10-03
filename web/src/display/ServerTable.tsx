@@ -26,7 +26,7 @@ export default function ServerTable({ servers, unavailable, byServer, probesKnow
             <td><Metric label={`处理器${historical}`} value={number(metrics.cpu_percent)} detail={`负载 ${number(metrics.load_1) === null ? '—' : metrics.load_1!.toFixed(2)}`} /></td>
             <td><Metric label={`内存${historical}`} value={ratio(metrics.memory_used, info.memory_total)} detail={`${size(metrics.memory_used)} / ${size(info.memory_total)}`} /></td>
             <td><Metric label={`磁盘${historical}`} value={ratio(metrics.disk_used, info.disk_total)} detail={`${size(metrics.disk_used)} / ${size(info.disk_total)}`} /></td>
-            <td><span className="d-good">↑ {live ? speed(network(metrics, 'transmit_bytes_per_sec')) : '—'}</span><span className="d-info">↓ {live ? speed(network(metrics, 'receive_bytes_per_sec')) : '—'}</span></td>
+            <td><span className="d-good">↑ {live ? speed(network(metrics, 'transmit_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</span><span className="d-info">↓ {live ? speed(network(metrics, 'receive_bytes_per_sec', server.asset_settings?.network_interface)) : '—'}</span></td>
             <td><ProbeQuality probes={probesKnown ? byServer.get(server.id) ?? [] : undefined} now={now} online={server.online} unavailable={probeError || unavailable} loading={probeLoading} compact /></td>
             <td><span>{number(metrics.uptime_secs) === null ? '—' : uptime(metrics.uptime_secs)}</span><small>{server.metrics_sampled_at ? new Date(server.metrics_sampled_at).toLocaleTimeString('zh-CN', { hour12: false }) : '无采样时间'}</small><a className="d-fleet-detail" href={dashboardServer(server.id)} aria-label={`查看 ${server.name} 详情`}>查看详情 →</a></td>
           </tr>

@@ -103,10 +103,11 @@ impl SystemServiceManager {
             );
             ensure!(
                 self.backend == ServiceBackend::Systemd,
-                "诊断启动需要 systemd 的 swap 系统调用保护；当前后端无法验证保护，不允许降级运行"
+                "诊断启动需要 systemd/cgroup v2 的 CPU 硬上限与 swap 系统调用保护；当前后端无法验证保护，不允许降级运行"
             );
             prepare_diagnostic_lock(self.privileged.as_ref()).await?;
             super::syscall_protection::verify_support(self.privileged.as_ref()).await?;
+            super::cpu_ceiling::verify_support(self.privileged.as_ref()).await?;
             let mut args = vec![
                 format!("--unit={}", job.unit),
                 "--no-block".into(),
@@ -120,7 +121,6 @@ impl SystemServiceManager {
                 "--property=SystemCallArchitectures=native".into(),
                 "--property=SystemCallFilter=~swapon swapoff".into(),
                 "--property=SystemCallErrorNumber=EPERM".into(),
-                super::syscall_protection::FILTER_CHECK.into(),
                 "--property=UMask=0077".into(),
                 "--property=StandardOutput=null".into(),
                 "--property=StandardError=journal".into(),
@@ -128,6 +128,9 @@ impl SystemServiceManager {
                 "--property=MemorySwapMax=0".into(),
                 format!("--property=TasksMax={}", job.tasks_max.get()),
                 format!("--property=CPUWeight={}", job.cpu_weight.get()),
+                format!("--property=CPUQuota={}%", job.cpu_max_percent.get()),
+                "--property=CPUQuotaPeriodSec=100ms".into(),
+                super::cpu_ceiling::pre_command(job.cpu_max_percent.get()),
                 format!("--property=IOWeight={}", job.io_weight.get()),
                 format!("--property=OOMScoreAdjust={}", job.oom_score_adjust.get()),
                 format!("--property=WorkingDirectory={directory}"),

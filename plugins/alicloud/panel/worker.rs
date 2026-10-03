@@ -121,13 +121,33 @@ async fn ancillary(pool: PgPool) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        if let Ok(cloud) = Cloud::new()
-            && let Err(error) = super::costs::tick(&pool, &cloud).await
-        {
+        let costs = match Cloud::new(&pool) {
+            Ok(cloud) => super::costs::tick(&pool, &cloud).await,
+            Err(error) => Err(super::failure(error)),
+        };
+        let deliveries = super::notices::dispatch(&pool).await;
+        let mut errors = Vec::new();
+        if let Err(error) = costs {
             tracing::warn!(%error,"Cloud cost cache failed");
+            errors.push(serde_json::json!({"stage":"cost_cache","error":error.to_string()}));
         }
-        if let Err(error) = super::notices::dispatch(&pool).await {
+        if let Err(error) = deliveries {
             tracing::warn!(%error,"Cloud notification delivery failed");
+            errors.push(
+                serde_json::json!({"stage":"notification_dispatch","error":error.to_string()}),
+            );
+        }
+        let status = if errors.is_empty() {
+            "healthy"
+        } else {
+            "failed"
+        };
+        let details = serde_json::json!({"scope":"cost_cache_and_notification_cycle","completed":errors.is_empty(),"errors":errors,"remote_resource_health_confirmed":false,"bill_freshness":"以资源实际查询时间为准"});
+        if let Err(error) =
+            crate::control_center::system::heartbeat(&pool, "alicloud-cost-cache", status, details)
+                .await
+        {
+            tracing::warn!(%error,"Cloud ancillary heartbeat storage failed");
         }
     }
 }
@@ -136,20 +156,40 @@ async fn maintenance(pool: PgPool) {
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         timer.tick().await;
-        if let Err(error) = tick(&pool).await {
-            tracing::warn!(%error,"Cloud management maintenance failed");
+        let outcome = tick(&pool).await;
+        let (status, details) = match outcome {
+            Ok(()) => (
+                "healthy",
+                serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":true,"remote_resource_health_confirmed":false}),
+            ),
+            Err(error) => {
+                tracing::warn!(%error,"Cloud management maintenance failed");
+                (
+                    "failed",
+                    serde_json::json!({"scope":"scheduler_and_reconciliation_cycle","completed":false,"error":error.to_string(),"remote_resource_health_confirmed":false}),
+                )
+            }
+        };
+        if let Err(error) =
+            crate::control_center::system::heartbeat(&pool, "alicloud", status, details).await
+        {
+            tracing::warn!(%error,"Cloud scheduler heartbeat storage failed");
         }
     }
 }
 
 async fn tick(pool: &PgPool) -> ApiResult<()> {
-    let cloud = Cloud::new().map_err(super::failure)?;
+    let cloud = Cloud::new(pool).map_err(super::failure)?;
     let now = sinan_protocol::now_timestamp();
     let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_operations WHERE status IN ('queued','running','uncertain') AND next_check_at<=$1 ORDER BY next_check_at,created_at LIMIT 8")
         .bind(now).fetch_all(pool).await?;
+    let mut first_error = None;
     for id in ids {
         if let Err(error) = operations::process(pool, id, &cloud).await {
             tracing::warn!(%error,%id,"Cloud operation reconciliation failed");
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
         }
     }
     let accounts: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM alicloud_accounts WHERE enabled AND NOT archived AND next_run_at<=$1 ORDER BY next_run_at,id LIMIT 1")
@@ -164,5 +204,8 @@ async fn tick(pool: &PgPool) -> ApiResult<()> {
         .bind(now - 180 * 86400)
         .execute(pool)
         .await?;
+    if let Some(error) = first_error {
+        return Err(error);
+    }
     Ok(())
 }
