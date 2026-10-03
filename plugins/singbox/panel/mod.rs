@@ -27,6 +27,7 @@ pub mod runtime_operations;
 pub mod settings;
 pub mod sources;
 pub mod statistics;
+mod subscription_fetch;
 pub mod subscription_parser;
 pub mod subscription_sources;
 pub mod subscriptions;

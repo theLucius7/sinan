@@ -1,6 +1,6 @@
 # ADR 0079：重新架构：插件边界、订阅来源与链路模型
 
-- 状态：已接受。阶段一已实施；阶段二随后实施；阶段三另写详细迁移方案，单独授权后实施。
+- 状态：已接受。阶段一已实施；阶段二已实施抓取器合并，解析器合并移入阶段三；阶段三另写详细迁移方案，单独授权后实施。
 - 日期：2026-10-03。
 - 关联：[全仓缺陷扫描](../acceptance/defect-scan-20261003.md) D17；[ADR 0040](0040-mixed-chains-and-subscriptions.md)、[ADR 0072](0072-subscription-source-lifecycle.md)、[ADR 0076](0076-node-catalog-and-external-access.md)、[ADR 0078](0078-admin-layout-and-node-sections.md)。
 
@@ -76,6 +76,7 @@
 ### 阶段三：统一为一种来源和一种链路模型（需要数据迁移，单独授权）
 
 1. 来源合并为一套模型，另一套的数据及其引用（链路订阅段、外部节点授权、节点库元数据）迁移过来。
+   另一套的解析器随之删除（阶段二只合并了抓取器），迁移方案须说明解析结果会变化的订阅如何处理。
 2. legacy 链路迁为单个受管段的 ordered 路径，接入已有的转换代码；mixed 链路逐段映射为 ordered 路径。
 3. 页头“创建链路”改用 ordered 流程，停止新建 mixed 链路。
 4. 在真实数据快照上演练迁移，设备完成升级、重新发布，并通过实机验收之后，才删除 mixed 和 legacy 编译层。
@@ -113,6 +114,21 @@
 - **未拆分的部分：**
   - 三个诊断插件（IP 质量、NodeQuality、TCP 质量）仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入。它们与宿主的 IP 质量、诊断类型互相引用，拆分需要先把共用类型提升为宿主接口，留到后续独立步骤。
   - 这三个插件的源码物理位于 `plugins/` 下，不在宿主目录的禁用词检查范围内。
+
+## 阶段二实施说明
+
+- **共享抓取器：** `plugins/singbox/panel/subscription_fetch.rs` 是两套来源唯一的下载实现。以 B 的可替换网络层和总期限为基础，规则取两边并集：
+  - 地址：必须以 `https://` 开头、无首尾空白、无用户信息和片段、端口不为 0；拦截 `localhost`、`.localhost`、`.local`、`.internal`；整个 `3fff::/16` 都视为非公网（原 B 只拦 `/20`）。
+  - DNS：全部答复必须是公网地址且端口一致，最多 64 个。
+  - 重定向：只跟随 301、302、303、307、308，最多三次，必须同源。附加凭据前再核对一次同源。
+  - 正文：支持 identity、gzip、deflate，原文和解压后各 2 MiB，解压也受总期限约束。
+  - 响应：`text/html`（出现在任何位置）与 `application/xhtml+xml` 都按 HTML 拒绝；`Content-Length`、`Content-Encoding` 不可读时明确失败。
+  - 请求头：认证头只允许 Authorization、Cookie、X-API-Key；条件请求头限 2 KiB；可选请求标识（User-Agent）只用于 A；`Accept-Encoding` 为 `gzip, deflate`。
+- **适配层：** `sources/fetch.rs`、`subscription_sources/fetch.rs` 只做转换，保留各自的调用方式和已存错误码（A 的 `ImportError` 代码，B 的 `stage/kind/message`）。
+- **A 的兼容处理：**
+  - A 原来允许最长 8 KiB 的缓存标记。超过新上限的旧值在请求前丢弃，改为完整下载，不让来源因自己的缓存而失败。
+  - `subscription-userinfo` 流量信息仍只由 A 解析和保存。
+- **解析器：** 未合并，原因见[待定问题记录](../open-questions.md)。两套解析器在 YAML 标量、合并键、格式识别、URI 参数、名称规则和输出模型上都有语义差异，统一到任一侧都会让部分已存订阅生成新版本或刷新失败。阶段三选定保留的来源后，另一套解析器随其存储一起删除。
 
 ## 替代方案
 

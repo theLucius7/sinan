@@ -14,6 +14,7 @@
 - [2026-10-03 代理流量按天汇总与数据保留（D5–D7）](usage-rollup-retention.md)
 - [2026-10-03 管理界面重排与 D12–D16](ui-relayout-20261003.md)
 - [2026-10-03 重新架构阶段一：插件编译边界](rearchitecture-phase1-20261003.md)
+- [2026-10-03 重新架构阶段二：订阅抓取合一](rearchitecture-phase2-20261003.md)
 
 - [已完成测试材料清理与最新制品保留](test-material-cleanup.md)
 
