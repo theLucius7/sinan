@@ -74,6 +74,46 @@ def positive(value):
     return type(value) is int and value > 0
 
 
+def resource_id(value):
+    """Preserve panel bigint identities without accepting bools or coercion."""
+    require(type(value) is int and 0 < value < 2**63, "resource_id_invalid")
+    return value
+
+
+def uuid_id(value):
+    require(isinstance(value, str), "uuid_id_invalid")
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        raise Rejected("uuid_id_invalid") from None
+    require(str(parsed) == value and parsed.int != 0, "uuid_id_invalid")
+    return value
+
+
+def batch_receipt(value, request):
+    require(isinstance(value, dict) and uuid_id(value.get("request_id")) == request["request_id"],
+            "batch_receipt_request_changed")
+    for field in ("chain_ids", "entry_node_ids"):
+        identifiers = value.get(field)
+        require(isinstance(identifiers, list) and len(identifiers) == len(request["items"]),
+                "batch_receipt_incomplete")
+        for identifier in identifiers:
+            resource_id(identifier)
+        require(len(set(identifiers)) == len(identifiers), "batch_receipt_duplicate_ids")
+    return value
+
+
+def source_receipt(value, identifier=None):
+    require(isinstance(value, dict), "source_receipt_invalid")
+    actual = resource_id(value.get("source_id"))
+    require(identifier is None or actual == identifier, "source_receipt_source_changed")
+    resource_id(value.get("settings_revision"))
+    resource_id(value.get("identity_epoch"))
+    if value.get("job_id") is not None:
+        uuid_id(value["job_id"])
+    return value
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -765,6 +805,8 @@ class Driver:
 
     def owned(self):
         ids = self.state["ids"]
+        for identifier in ids.values():
+            resource_id(identifier)
         return {"servers": [ids[key] for key in ("server_A", "server_M", "server_B") if key in ids],
                 "chains": [ids[key] for key in ("chain_three", "chain_four") if key in ids],
                 "users": [ids[key] for key in ("user_three", "user_four") if key in ids],
@@ -830,7 +872,7 @@ class Driver:
             item = self.panel.request(path, "POST", {"name": name, **fields}, expected=(201,))
         else:
             item = matches[0]
-        require(positive(item.get("id")), "resource_id_invalid")
+        resource_id(item.get("id"))
         for field in ("server_id", "public_host", "port", "chain_ids", "node_ids"):
             if field in fields:
                 require(item.get(field) == fields[field], "owned_resource_configuration_changed")
@@ -839,7 +881,11 @@ class Driver:
         return item
 
     def resource(self, which):
-        return self.panel.request(ORDERED_RESOURCES + "/chain/" + str(self.state["ids"]["chain_" + which]))
+        identifier = resource_id(self.state["ids"]["chain_" + which])
+        value = self.panel.request(ORDERED_RESOURCES + "/chain/" + str(identifier))
+        require(isinstance(value, dict) and resource_id(value.get("id")) == identifier,
+                "ordered_resource_changed")
+        return value
 
     def applied(self, which, generation=None):
         def ready(item):
@@ -850,8 +896,11 @@ class Driver:
         return self.wait(which, lambda: self.resource(which), ready)
 
     def source_nodes(self):
-        identifier = self.state["ids"]["source"]
-        return self.panel.request(ORDERED_SOURCES + f"/{identifier}/nodes")
+        identifier = resource_id(self.state["ids"]["source"])
+        value = self.panel.request(ORDERED_SOURCES + f"/{identifier}/nodes")
+        require(isinstance(value, dict) and resource_id(value.get("source_id")) == identifier,
+                "source_nodes_source_changed")
+        return value
 
     def source_version(self):
         page = self.wait("source_nodes", self.source_nodes,
@@ -859,19 +908,122 @@ class Driver:
                          and any(node.get("selectable") for node in item.get("nodes", [])))
         nodes = [node for node in page["nodes"] if node.get("selectable")]
         require(len(nodes) == 1, "fixture_source_identity_ambiguous")
-        return nodes[0]
+        node = nodes[0]
+        revision = page["success_revision"]
+        require(resource_id(revision.get("source_id")) == self.state["ids"]["source"]
+                and resource_id(node.get("source_id")) == self.state["ids"]["source"],
+                "source_version_source_changed")
+        uuid_id(node.get("id"))
+        uuid_id(node.get("version_id"))
+        require(uuid_id(node.get("source_revision_id")) == uuid_id(revision.get("id")),
+                "source_version_revision_changed")
+        require(resource_id(node.get("identity_epoch")) == resource_id(revision.get("identity_epoch")),
+                "source_version_epoch_changed")
+        return node
+
+    def source(self):
+        identifier = resource_id(self.state["ids"]["source"])
+        value = self.panel.request(ORDERED_SOURCES + f"/{identifier}")
+        require(isinstance(value, dict) and resource_id(value.get("id")) == identifier,
+                "source_identity_changed")
+        resource_id(value.get("settings_revision"))
+        resource_id(value.get("identity_epoch"))
+        return value
+
+    def read_source_job(self, receipt, job_id):
+        source_receipt(receipt, resource_id(self.state["ids"]["source"]))
+        uuid_id(job_id)
+        value = self.panel.request(ORDERED_SOURCE_JOBS + "/" + job_id)
+        require(isinstance(value, dict) and uuid_id(value.get("id")) == job_id
+                and resource_id(value.get("source_id")) == receipt["source_id"]
+                and resource_id(value.get("settings_revision")) == receipt["settings_revision"]
+                and resource_id(value.get("identity_epoch")) == receipt["identity_epoch"],
+                "source_job_binding_changed")
+        if value.get("source_revision_id") is not None:
+            uuid_id(value["source_revision_id"])
+        return value
+
+    def source_job(self, receipt, label="source_job"):
+        job_id = uuid_id(receipt.get("job_id"))
+        return self.wait(label, lambda: self.read_source_job(receipt, job_id),
+                         lambda item: item.get("status") in ("succeeded", "failed", "cancelled", "superseded"))
+
+    def source_failure(self, receipt, previous):
+        source_receipt(receipt, resource_id(self.state["ids"]["source"]))
+        require(receipt["settings_revision"] == previous["settings_revision"] + 1
+                and receipt["identity_epoch"] == previous["identity_epoch"],
+                "source_failure_receipt_changed")
+        def bound_source():
+            current = self.source()
+            require(current["settings_revision"] == receipt["settings_revision"]
+                    and current["identity_epoch"] == receipt["identity_epoch"],
+                    "source_failure_binding_changed")
+            return current
+        if receipt.get("job_id") is not None:
+            job = self.source_job(receipt, "invalid_source")
+            current = bound_source()
+        else:
+            discovered = None
+            def observe():
+                nonlocal discovered
+                current = bound_source()
+                active = current.get("active_job")
+                if active is not None:
+                    require(isinstance(active, dict) and resource_id(active.get("source_id")) == receipt["source_id"]
+                            and resource_id(active.get("identity_epoch")) == receipt["identity_epoch"],
+                            "source_job_binding_changed")
+                    identifier = uuid_id(active.get("id"))
+                    revision = resource_id(active.get("settings_revision"))
+                    if revision == receipt["settings_revision"]:
+                        require(discovered is None or discovered == identifier, "source_job_binding_changed")
+                        discovered = identifier
+                    else:
+                        require(revision < receipt["settings_revision"] and active.get("status") == "cancelling",
+                                "source_job_binding_changed")
+                if discovered is not None:
+                    return {"source": current, "job": self.read_source_job(receipt, discovered)}
+                # A fast new worker may finish between observations. No active
+                # job plus a fresh source error proves failure; a retained old
+                # error needs a strictly newer attempt, never an old success.
+                attempt, old_attempt = current.get("last_attempt_at"), previous.get("last_attempt_at")
+                fresh_attempt = type(attempt) is int and (old_attempt is None
+                    or type(old_attempt) is int and attempt > old_attempt)
+                failed = active is None and current.get("last_error") is not None \
+                    and (previous.get("last_error") is None or fresh_attempt)
+                return {"source": current, "job": None, "failed": failed}
+            result = self.wait("invalid_source", observe, lambda item: item.get("failed") is True
+                               or isinstance(item.get("job"), dict)
+                               and item["job"].get("status") in ("succeeded", "failed", "cancelled", "superseded"))
+            current, job = result["source"], result["job"]
+        require((job is None or job.get("status") == "failed" and job.get("error") is not None)
+                and current.get("last_error") is not None
+                and isinstance(current.get("latest_success"), dict)
+                and uuid_id(current["latest_success"].get("id")) == uuid_id(previous["latest_success"].get("id")),
+                "source_failure_erased_success")
+        return current
 
     def patch_source(self, version, action="update"):
-        identifier = self.state["ids"]["source"]
-        source = self.panel.request(ORDERED_SOURCES + f"/{identifier}")
+        identifier = resource_id(self.state["ids"]["source"])
+        source = self.source()
         body = {"request_id": str(uuid.uuid4()), "settings_revision": source["settings_revision"],
                 "input": {"kind": "inline", "content": self.fixtures.source(version), "identity_action": action}}
         receipt = self.request_once("source-" + body["request_id"], ORDERED_SOURCES + f"/{identifier}",
                                     "PATCH", body)
+        source_receipt(receipt, identifier)
+        require(receipt["settings_revision"] == source["settings_revision"] + 1,
+                "source_receipt_revision_changed")
+        require(receipt["identity_epoch"] == source["identity_epoch"] + int(action == "replace"),
+                "source_receipt_epoch_changed")
         if receipt.get("job_id"):
-            job = self.wait("source_job", lambda: self.panel.request(ORDERED_SOURCE_JOBS + "/" + receipt["job_id"]),
-                            lambda item: item.get("status") in ("succeeded", "failed", "cancelled", "superseded"))
+            job = self.source_job(receipt)
             require(job.get("status") == "succeeded", "source_job_not_successful")
+        else:
+            # A superseded job may still be cancelling. The API returns no job
+            # until its worker can enqueue the new revision; old success is not
+            # evidence that this update has finished.
+            self.wait("source_import", self.source_nodes, lambda page: isinstance(page.get("success_revision"), dict)
+                      and page["success_revision"].get("settings_revision") == receipt["settings_revision"]
+                      and page["success_revision"].get("identity_epoch") == receipt["identity_epoch"])
         self.state["source_fixture_version"] = version
         self.save()
         return receipt
@@ -1054,15 +1206,17 @@ class Driver:
             matches = [item for item in sources if item.get("name") == name]
             require(len(matches) <= 1, "owned_source_ambiguous")
             if matches:
-                source_id = matches[0]["id"]
+                source_id = resource_id(matches[0].get("id"))
             else:
                 body = {"request_id": str(uuid.uuid4()), "name": name,
                         "input": {"kind": "inline", "content": self.fixtures.source("v1")}}
                 receipt = self.request_once("create-source", ORDERED_SOURCES, "POST", body)
+                source_receipt(receipt)
                 source_id = receipt["source_id"]
             self.state["ids"]["source"] = source_id
             self.state["source_fixture_version"] = "v1"
             self.save()
+        resource_id(source_id)
         node = self.source_version()
         if "chain_three" not in self.state["ids"]:
             request = self.state["requests"].get("create-chains", {}).get("body")
@@ -1080,8 +1234,7 @@ class Driver:
                                               "entry": {"mode": "existing", "node_id": self.state["ids"]["node_" + which]},
                                               "hops": hops})
             receipt = self.request_once("create-chains", ORDERED_BATCH, "POST", request)
-            require(len(receipt.get("chain_ids", [])) == 2 and len(receipt.get("entry_node_ids", [])) == 2,
-                    "batch_receipt_incomplete")
+            batch_receipt(receipt, request)
             for position, which in enumerate(("three", "four")):
                 self.state["ids"]["chain_" + which] = receipt["chain_ids"][position]
                 self.state["ids"]["node_" + which] = receipt["entry_node_ids"][position]
@@ -1150,7 +1303,7 @@ class Driver:
 
     def scenario_atomic_replay(self):
         body = self.state["requests"]["create-chains"]["body"]
-        replay = self.panel.request(ORDERED_BATCH, "POST", body, expected=(200,))
+        replay = batch_receipt(self.panel.request(ORDERED_BATCH, "POST", body, expected=(200,)), body)
         require(replay == self.state["initial_batch_receipt"], "batch_replay_ids_changed")
         changed = json.loads(canonical(body))
         changed["items"][0]["name"] += "-changed"
@@ -1190,18 +1343,22 @@ class Driver:
         body = {"request_id": str(uuid.uuid4()), "settings_revision": pinned["settings_revision"],
                 "generation": pinned["path_state"]["desired_generation"],
                 "versions": [{"hop_position": external(pinned)["position"], "node_version_id": latest["version_id"]}]}
-        self.request_once("apply-version-" + body["request_id"], ORDERED_RESOURCES + f"/chain/{pinned['id']}/apply-node-versions", "POST", body)
+        identifier = resource_id(pinned["id"])
+        uuid_id(latest["version_id"])
+        receipt = self.request_once("apply-version-" + body["request_id"],
+                                    ORDERED_RESOURCES + f"/chain/{identifier}/apply-node-versions", "POST", body)
+        require(isinstance(receipt, dict) and uuid_id(receipt.get("request_id")) == body["request_id"]
+                and receipt.get("kind") == "chain" and resource_id(receipt.get("id")) == identifier
+                and resource_id(receipt.get("settings_revision")) == body["settings_revision"] + 1
+                and resource_id(receipt.get("generation")) > body["generation"],
+                "apply_version_receipt_changed")
         self.applied("four", before["four"] + 1)
         source_id = self.state["ids"]["source"]
-        source = self.panel.request(ORDERED_SOURCES + f"/{source_id}")
+        source = self.source()
         bad = {"request_id": str(uuid.uuid4()), "settings_revision": source["settings_revision"],
                "input": {"kind": "inline", "content": "<html>TEST_ONLY invalid subscription</html>", "identity_action": "update"}}
         receipt = self.request_once("invalid-source-" + bad["request_id"], ORDERED_SOURCES + f"/{source_id}", "PATCH", bad)
-        job = self.wait("invalid_source", lambda: self.panel.request(ORDERED_SOURCE_JOBS + "/" + receipt["job_id"]),
-                        lambda item: item.get("status") == "failed")
-        current = self.panel.request(ORDERED_SOURCES + f"/{source_id}")
-        require(job.get("error") is not None and current.get("last_error") is not None
-                and current["latest_success"]["id"] == source["latest_success"]["id"], "source_failure_erased_success")
+        self.source_failure(receipt, source)
         self.patch_source("v3", "replace")
         replaced = self.source_version()
         require(replaced["identity_epoch"] != latest["identity_epoch"], "source_replacement_epoch_unchanged")
@@ -1377,7 +1534,7 @@ class Driver:
         ids = self.state["ids"]
         self.panel.request(ORDERED_RESOURCES + f"/direct/{ids['node_B']}", "DELETE", expected=(409,))
         self.panel.request(ORDERED_RESOURCES + f"/chain/{ids['chain_three']}", "DELETE", expected=(409,))
-        source = self.panel.request(ORDERED_SOURCES + f"/{ids['source']}")
+        source = self.source()
         self.panel.request(ORDERED_SOURCES + f"/{ids['source']}", "DELETE",
                            {"settings_revision": source["settings_revision"]}, expected=(409,))
         before = self.quiet_usage()
@@ -1392,7 +1549,8 @@ class Driver:
                 "retired_dependencies_not_confirmed_absent")
         for which in ("three", "four"):
             self.subscription(which, blocked=True)
-        replay = self.panel.request(ORDERED_BATCH, "POST", self.state["requests"]["create-chains"]["body"])
+        request = self.state["requests"]["create-chains"]["body"]
+        replay = batch_receipt(self.panel.request(ORDERED_BATCH, "POST", request), request)
         require(replay == self.state["initial_batch_receipt"], "deleted_receipt_recreated_resources")
         resources = self.panel.request(ORDERED_RESOURCES)
         require(not any(item["kind"] == "chain" and item["id"] in self.owned()["chains"] for item in resources),

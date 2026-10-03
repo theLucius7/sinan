@@ -32,6 +32,18 @@ LEGACY_METRICS = "http_status download_bytes upload_bytes connect_ms first_byte_
 METRICS = "http_status download_bytes upload_bytes local_dns_ms connect_ms pretransfer_ms first_byte_ms elapsed_ms".split()
 STAGES = {"completed", "receiving_response", "request_or_response", "proxy_or_transport", "before_proxy_connect", "unknown"}
 EVIDENCE_NAME = "traffic-evidence.json"
+REQUEST_SECONDS = 90
+PROCESS_GUARD_SECONDS = 92
+TRAFFIC_POLICY = {
+    "target_scope": "owned_loopback",
+    "request_ms": REQUEST_SECONDS * 1000,
+    "process_guard_ms": PROCESS_GUARD_SECONDS * 1000,
+    "failure_probe_network_ms": 7000,
+    "download_bytes": 2 * 1024 * 1024,
+    "upload_bytes": 1024 * 1024,
+    "retries": 0,
+}
+TIMEOUT_SOURCES = {"curl_deadline", "process_guard"}
 
 
 def integer(value, maximum):
@@ -57,6 +69,10 @@ def safe_record(value, transfer=False):
             result["curl_succeeded"] = value["curl_succeeded"]
         if isinstance(value.get("reached_stage"), str) and value["reached_stage"] in STAGES:
             result["reached_stage"] = value["reached_stage"]
+        if (result.get("curl_exit") == 28 and result.get("error_kind") == "timeout"
+                and isinstance(value.get("timeout_source"), str)
+                and value["timeout_source"] in TIMEOUT_SOURCES):
+            result["timeout_source"] = value["timeout_source"]
     return result
 
 
@@ -64,6 +80,11 @@ def safe_summary(value):
     if not isinstance(value, dict):
         return {}
     result = {}
+    policy = value.get("policy")
+    if (isinstance(policy, dict) and all(type(policy.get(key)) is type(expected)
+                                       and policy[key] == expected
+                                       for key, expected in TRAFFIC_POLICY.items())):
+        result["policy"] = dict(TRAFFIC_POLICY)
     if isinstance(value.get("transfers"), list):
         records = [safe_record(record, True) for record in value["transfers"][:4]]
         result["transfers"] = [record for record in records if record]
@@ -149,7 +170,7 @@ def reached_stage(record, status):
 def transfer(scratch, phase, direction):
     # All endpoints and curl options are fixed; no config, environment, or body is emitted.
     output = scratch / ("download.bin" if direction == "download" else "upload-response.txt")
-    command = ["curl", "--fail", "--silent", "--max-time", "90", "--noproxy", "",
+    command = ["curl", "--fail", "--silent", "--max-time", str(REQUEST_SECONDS), "--noproxy", "",
                "--proxy", "socks5h://127.0.0.1:2080"]
     if direction == "upload":
         command += ["-X", "POST", "--data-binary", "@" + str(scratch / "upload.bin")]
@@ -159,13 +180,15 @@ def transfer(scratch, phase, direction):
     started = time.monotonic()
     try:
         process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 text=True, timeout=92, check=False)
+                                 text=True, timeout=PROCESS_GUARD_SECONDS, check=False)
         status = process.returncode if 0 <= process.returncode <= 255 else (
             128 - process.returncode if -127 <= process.returncode < 0 else 1)
         record = curl_metrics(process.stdout)
         kind = "signal" if process.returncode < 0 else ("none" if status == 0 else CURL_ERRORS.get(status, "curl"))
+        if status == 28:
+            record["timeout_source"] = "curl_deadline"
     except subprocess.TimeoutExpired:
-        status, record, kind = 28, {}, "timeout"
+        status, record, kind = 28, {"timeout_source": "process_guard"}, "timeout"
     except OSError:
         status, record, kind = 127, {}, "launch"
     record.update(phase=phase, direction=direction, curl_exit=status, error_kind=kind,
@@ -173,6 +196,7 @@ def transfer(scratch, phase, direction):
     record.setdefault("elapsed_ms", min(100000, int((time.monotonic() - started) * 1000)))
     path = scratch / EVIDENCE_NAME
     evidence = load(path)
+    evidence["policy"] = dict(TRAFFIC_POLICY)
     evidence["transfers"] = [item for item in evidence.get("transfers", [])
                              if (item["phase"], item["direction"]) != (phase, direction)] + [record]
     try:

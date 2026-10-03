@@ -334,7 +334,8 @@ def dispatch(manifest, identities, request):
             path = within(owned_root(manifest["run_root"], manifest["run_id"]), arguments["descriptor_file"])
             require(path.stat().st_mode & 0o077 == 0, "private_enrollment_descriptor_required")
             descriptor = load(path)
-            require(descriptor.get("run_id") == manifest["run_id"] and descriptor.get("role") == role and
+            require(isinstance(descriptor, dict) and type(descriptor.get("schema")) is int and descriptor["schema"] == 1
+                    and descriptor.get("run_id") == manifest["run_id"] and descriptor.get("role") == role and
                     isinstance(descriptor.get("token"), str) and 0 < len(descriptor["token"]) <= 512
                     and all(33 <= ord(character) <= 126 for character in descriptor["token"]),
                     "enrollment_descriptor_identity_invalid")

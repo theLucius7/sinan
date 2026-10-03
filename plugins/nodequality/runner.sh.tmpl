@@ -2,7 +2,7 @@
 # Sinan runner for the original pinned NodeQuality script.
 set -euo pipefail
 umask 077
-version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19
+version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22
 usage() {
   cat <<'USAGE'
 Usage: nodequality --workspace <ABSOLUTE_DIRECTORY> --mode daily|full --ip-version both|ipv4|ipv6 --network-mode low|normal [--upload-report true|false]
@@ -77,13 +77,29 @@ mkdir "$workspace/.runner.lock" 2>/dev/null || die 'workspace is already running
 runtime=$workspace/.runner
 watcher_pid=
 cleanup() {
-  local directory
-  if [[ -f $runtime/report.py ]]; then
-    python3 "$runtime/report.py" snapshot "$workspace" 2>/dev/null || true
-  fi
+  local directory attempt
+  trap '' INT TERM HUP
   if [[ -n $watcher_pid ]]; then
     kill "$watcher_pid" 2>/dev/null || true
+    for attempt in {1..20}; do
+      kill -0 "$watcher_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$watcher_pid" 2>/dev/null; then
+      kill -KILL "$watcher_pid" 2>/dev/null || true
+    fi
+    for attempt in {1..20}; do
+      kill -0 "$watcher_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$watcher_pid" 2>/dev/null; then
+      printf '%s\n' 'chapter watcher cleanup could not be confirmed; private workspace retained' >&2
+      return 1
+    fi
     wait "$watcher_pid" 2>/dev/null || true
+  fi
+  if [[ -f $runtime/report.py ]]; then
+    python3 "$runtime/report.py" snapshot "$workspace" 2>/dev/null || true
   fi
   for directory in "$workspace"/.nodequality*/BenchOs; do
     [[ -d $directory && ! -L $directory ]] || continue
@@ -188,8 +204,14 @@ case "$ip_version" in ipv4) ip_arguments=(-4) ;; ipv6) ip_arguments=(-6) ;; esac
 network_answer=y
 [[ $network_mode != low ]] || network_answer=l
 printf 'y\ny\n%s\ny\n' "$network_answer" > "$runtime/answers.txt"
-python3 "$runtime/report.py" watch-sections "$workspace" &
+watcher_signal=
+trap 'watcher_signal=130' INT
+trap 'watcher_signal=143' TERM HUP
+python3 "$runtime/report.py" watch-sections "$workspace" "$$" &
 watcher_pid=$!
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+[[ -z $watcher_signal ]] || exit "$watcher_signal"
 set +e
 BASH_ENV="$runtime/exit-observer.sh" bash "$runtime/NodeQuality.sh" -d "$workspace" "${ip_arguments[@]}" \
   < "$runtime/answers.txt" 2>&1 | python3 "$runtime/report.py" stream-log "$workspace/log.txt"

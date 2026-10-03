@@ -8,8 +8,8 @@ usage() {
 Usage: tools/build-nodequality-native.sh <amd64|arm64> <ARTIFACT_ROOT>
 
 Build prerequisites: bash, curl, python3. No benchmark runs during packaging.
-Output: ARTIFACT_ROOT/nodequality/a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1/<arch>
-        ARTIFACT_ROOT/nodequality/a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1/SHA256SUMS
+Output: ARTIFACT_ROOT/nodequality/a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2/<arch>
+        ARTIFACT_ROOT/nodequality/a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2/SHA256SUMS
 
 Both targets contain one architecture-independent executable named nodequality.
 The canonical entrypoint, five first-level scripts, seven reference files and
@@ -30,7 +30,7 @@ case "$arch" in amd64|arm64) ;; *) die 'architecture must be amd64 or arm64' ;; 
 [[ -n $2 ]] || die 'ARTIFACT_ROOT must not be empty'
 for tool in curl python3; do command -v "$tool" >/dev/null || die "missing build tool: $tool"; done
 upstream_revision=a92fca6c0067df29ddd03fdc2fee6f3000f64545
-version=$upstream_revision-sinan-native-r1
+version=$upstream_revision-sinan-native-r2
 output=$2/nodequality/$version
 [[ ! -L $output ]] || die 'output version directory must not be a symlink'
 mkdir -p "$output"
@@ -126,7 +126,7 @@ for marker, path in (
     ("DAILY_HELPER", plugin / "daily.py"),
     ("OFFICIAL_IP_HELPER", plugin / "official-ip.py"),
     ("EXECUTION_ADMISSION", plugin / "execution-admission.json"),
-    ("CURL_SHIM", plugin / "curl-shim.sh"),
+    ("CURL_SHIM", plugin / "runtime-curl.sh"),
     ("CHROOT_SHIM", plugin / "chroot-shim.sh"),
 ):
     placeholder = ("@" + marker + "@\n").encode()

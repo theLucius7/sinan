@@ -86,6 +86,47 @@ class InventoryTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 inventory.declared_identities(path, report)
 
+    def test_private_path_executables_remain_explicit_omissions_even_when_declaration_matches(self):
+        report = self.scan([
+            ('BenchOs/usr/bin/public-tool', elf(), 0o755, 'ordinary'),
+            ('BenchOs/root/renamed-tool', b'PRIVATE_EXECUTABLE_DO_NOT_READ', 0o755, 'ordinary'),
+            ('BenchOs/etc/init.d/helper', b'PRIVATE_EXECUTABLE_DO_NOT_READ', 0o750, 'ordinary'),
+            ('BenchOs/home/operator/library', b'PRIVATE_BYTES_DO_NOT_READ', 0o600, 'ordinary')])
+        self.assertEqual(report['configuration_files_not_read'], 3)
+        self.assertEqual([row['path'] for row in report['unread_executable_files']],
+                         ['BenchOs/etc/init.d/helper', 'BenchOs/root/renamed-tool'])
+        self.assertEqual(report['unread_executable_files'][1]['mode'], 0o755)
+        self.assertEqual(report['inventory_scope'], 'public-ordinary-executable-identities')
+        self.assertFalse(report['complete_execution_inventory'])
+        self.assertNotIn('PRIVATE_EXECUTABLE_DO_NOT_READ', json.dumps(report))
+        self.assertNotIn('PRIVATE_BYTES_DO_NOT_READ', json.dumps(report))
+        self.assertNotIn('sha256', report['unread_executable_files'][0])
+        inventory.declared_identities(self.declaration(report), report)
+        self.assertFalse(report['full_start_allowed'])
+        self.assertFalse(report['rights_verified'])
+
+    def test_private_configuration_contents_are_never_opened(self):
+        path, digest = self.archive([
+            ('BenchOs/root/.config/tool/config.json', b'PRIVATE_VALUE', 0o600, 'ordinary'),
+            ('BenchOs/etc/credential', b'PRIVATE_VALUE', 0o600, 'ordinary'),
+            ('BenchOs/root/helper', b'PRIVATE_VALUE', 0o700, 'ordinary')])
+        with mock.patch.object(tarfile.TarFile, 'extractfile', side_effect=AssertionError('private contents read')):
+            report = inventory.scan(path, 'amd64', digest)
+        self.assertEqual(report['files'], [])
+        self.assertEqual(report['configuration_files_not_read'], 3)
+        self.assertEqual(len(report['unread_executable_files']), 1)
+
+    def test_sparse_regular_files_are_rejected_before_reading_content(self):
+        path = self.root / 'rootfs.tar.gz'
+        with tarfile.open(path, 'w:gz', format=tarfile.PAX_FORMAT) as archive:
+            member = tarfile.TarInfo('BenchOs/usr/bin/tool')
+            member.size, member.mode = 16, 0o755
+            member.pax_headers = {'GNU.sparse.map': '0,16', 'GNU.sparse.size': '16'}
+            archive.addfile(member, io.BytesIO(b'x' * 16))
+        with mock.patch.object(tarfile.TarFile, 'extractfile', side_effect=AssertionError('sparse contents read')):
+            with self.assertRaisesRegex(ValueError, 'sparse rootfs'):
+                inventory.scan(path, 'amd64', hashlib.sha256(path.read_bytes()).hexdigest())
+
     def test_wrong_archive_digest_and_architecture_are_refused_without_execution(self):
         path, digest = self.archive([('BenchOs/usr/bin/tool', elf(183), 0o755, 'ordinary')])
         with self.assertRaisesRegex(ValueError, 'SHA256 mismatch'):

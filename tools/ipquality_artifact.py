@@ -278,16 +278,42 @@ def check_minimal_profile(metadata, manifest):
     ensure(name in metadata, 'minimal IPQuality profile proof is absent')
     content = metadata[name]
     proof = decode(content)
+    inventories = ('inputs-lock.json', 'source-inventory.json', 'license-inventory.json')
+    ensure(all(prefix + item in metadata for item in inventories)
+           and prefix + 'provenance.json' in metadata and 'var/lib/dpkg/status' in metadata,
+           'minimal IPQuality actual package/source inventory is absent')
     lock = decode(metadata[prefix + 'inputs-lock.json'])
     build.INPUT_PROFILE.validate_public(proof, lock)
     ensure(content == build.canonical(proof) + b'\n', 'minimal profile proof bytes are not canonical')
     provenance = decode(metadata[prefix + 'provenance.json'])
     ensure(provenance.get('profile_proof_sha256') == digest(content),
            'factory provenance does not bind the minimal profile')
+    expected_provenance = {'schema': 1, 'kind': build.PROVENANCE_KIND, 'arch': lock['arch'],
+        'full_ready': False, 'source_authenticated': True, 'reproducibility_verified': False,
+        'source_epoch': lock['source_epoch'], 'builder': lock['builder'],
+        'inputs_lock_sha256': digest(metadata[prefix + 'inputs-lock.json']),
+        'source_inventory_sha256': digest(metadata[prefix + 'source-inventory.json']),
+        'license_inventory_sha256': digest(metadata[prefix + 'license-inventory.json']),
+        'build_tool_sha256': proof['implementations']['tools/nodequality-rootfs-build.py'],
+        'pending_capabilities': build.PENDING, 'profile_proof_sha256': digest(content)}
+    ensure(provenance == expected_provenance, 'factory provenance differs from the exact minimal profile')
+    ensure(metadata[prefix + 'inputs-lock.json'] == build.canonical(lock) + b'\n',
+           'minimal input lock bytes are not canonical')
+    sources = build.material_inventory({key: value for key, value in lock.items() if key != 'builder'})
+    ensure(metadata[prefix + 'source-inventory.json'] == build.canonical(sources) + b'\n',
+           'actual corresponding source inventory differs from the exact minimal closure')
+    installed = build.verify_installed_packages(metadata['var/lib/dpkg/status'], lock['packages'],
+                                               exact_sources=True)
+    licenses = decode(metadata[prefix + 'license-inventory.json'])
+    ensure(licenses.get('packages') == installed,
+           'actual package status differs from the declared license inventory')
     paths = {entry['path']: entry for entry in manifest['entries']}
-    ensure(paths.get(name, {}).get('type') == 'file'
-           and paths[name].get('sha256') == digest(content)
-           and paths[name].get('size') == len(content), 'runtime manifest does not bind the minimal profile')
+    for path in (name, prefix + 'provenance.json', *(prefix + item for item in inventories),
+                 'var/lib/dpkg/status'):
+        ensure(paths.get(path, {}).get('type') == 'file'
+               and paths[path].get('sha256') == digest(metadata[path])
+               and paths[path].get('size') == len(metadata[path]),
+               'runtime manifest does not bind the minimal profile or actual inventories')
     permitted = {prefix + item for item in ('provenance.json', 'inputs-lock.json', 'source-inventory.json',
                                            'license-inventory.json', 'ipquality-profile.json')}
     ensure(all(path == prefix.rstrip('/') or path in permitted for path in paths if path.startswith(prefix)),
@@ -335,6 +361,7 @@ def validate_files(files, version, arch, intake_parent=None, progress=None):
         names = ['usr/share/sinan-rootfs/' + name for name in
                  ('provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
                   'ipquality-profile.json')]
+        names.append('var/lib/dpkg/status')
         metadata = helper.read_metadata(path, manifest, names)
     provenance = decode(metadata['usr/share/sinan-rootfs/provenance.json'])
     ensure(provenance.get('kind') == 'sinan-ipquality-debian12-preparation'

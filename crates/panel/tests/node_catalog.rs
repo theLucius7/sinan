@@ -596,6 +596,15 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
         )
         .await?;
     assert_eq!(denied.status(), StatusCode::CONFLICT);
+    let error: Value = denied.json().await?;
+    assert_eq!(
+        error["references"]["chains"],
+        json!([{
+            "id":chain,"name":"Retiring owner","role":"exit",
+            "generation":1,"hop_position":1,"state":"unresolved"
+        }])
+    );
+    assert!(!error.to_string().contains("private_key"));
     assert_eq!(catalog(&panel, &cookie).await?, rows);
     let retained: Value = sqlx::query_scalar("SELECT jsonb_build_object('chain',to_jsonb(c),'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY generation) FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id),'hops',(SELECT jsonb_agg(to_jsonb(h) ORDER BY generation,position) FROM singbox_ordered_chain_hops h WHERE h.chain_id=c.id)) FROM singbox_chains c WHERE c.id=$1")
         .bind(chain).fetch_one(&pool).await?;
@@ -690,5 +699,71 @@ async fn catalog_deletion_preserves_damaged_cleanup_owners_and_old_entry_policy_
     assert_eq!(error["references"]["chains"], json!([]));
     assert!(!error.to_string().contains("private_key"));
     assert_eq!(catalog(&panel, &cookie).await?, rows);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn catalog_chain_policy_conflict_returns_public_references_before_batch_mutation(
+    pool: PgPool,
+) -> Result<()> {
+    let panel = TestPanel::start(pool.clone()).await?;
+    let cookie = panel.admin_cookie().await?;
+    let server = panel.create_server(&cookie, "Entry host").await?;
+    let entry = id(&panel.create_node(&cookie, server, "Policy entry").await?)?;
+    let free = id(&panel.create_node(&cookie, server, "Free direct").await?)?;
+    let exit_server = panel.create_server(&cookie, "Exit host").await?;
+    let exit = id(&panel
+        .create_node(&cookie, exit_server, "Shared exit")
+        .await?)?;
+    let chain = id(&panel
+        .import_legacy_chain(&cookie, "Protected chain", entry, exit)
+        .await?)?;
+    let policy: i64 = sqlx::query_scalar(
+        "INSERT INTO singbox_policy_groups(name) VALUES('Protected policy') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query("INSERT INTO singbox_policy_chains(group_id,chain_id) VALUES($1,$2)")
+        .bind(policy)
+        .bind(chain)
+        .execute(&pool)
+        .await?;
+    let rows = catalog(&panel, &cookie).await?;
+    let free_row = rows
+        .iter()
+        .find(|value| value["kind"] == "direct" && value["id"] == free)
+        .context("free resource")?;
+    let chain_row = rows
+        .iter()
+        .find(|value| value["kind"] == "chain" && value["id"] == chain)
+        .context("protected chain resource")?;
+    let response = panel
+        .admin(
+            Method::DELETE,
+            &format!("{ROOT}/node-catalog/batch"),
+            &cookie,
+            Some(json!({"items":[change(free_row,json!({})),change(chain_row,json!({}))]})),
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error: Value = response.json().await?;
+    assert_eq!(
+        error["references"]["policies"],
+        json!([{
+            "id":policy,"name":"Protected policy"
+        }])
+    );
+    assert_eq!(error["references"]["chains"], json!([]));
+    assert!(!error.to_string().contains("private_key"));
+    assert_eq!(catalog(&panel, &cookie).await?, rows);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM nodes WHERE id=ANY($1) AND deleted_at IS NULL",
+        )
+        .bind(vec![entry, free, exit])
+        .fetch_one(&pool)
+        .await?,
+        3
+    );
     Ok(())
 }

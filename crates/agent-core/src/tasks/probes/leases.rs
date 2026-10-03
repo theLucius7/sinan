@@ -38,6 +38,49 @@ impl AcceptedLease {
     }
 }
 
+#[derive(Default)]
+pub(super) struct LeaseReceipts {
+    accepted: HashMap<Uuid, AcceptedLease>,
+}
+
+impl LeaseReceipts {
+    pub(super) fn accept(
+        &mut self,
+        snapshot: sinan_protocol::ProbeLease,
+        server_id: i64,
+        state: &SharedState,
+        session: Arc<PanelClient>,
+        request_started: Instant,
+    ) -> Result<AcceptedLease> {
+        // An intervening receipt must not forget the original deadline or bytes
+        // of a lease that the panel can still legitimately repeat. Issuance is
+        // monotonic in the durable high-water mark, so older expired receipts
+        // can be dropped once a newer issuance passes their absolute expiry.
+        let retained = self
+            .accepted
+            .values()
+            .filter(|lease| lease.snapshot.expires_at > snapshot.issued_at)
+            .count();
+        ensure!(
+            self.accepted.contains_key(&snapshot.id) || retained < 64,
+            "too many live probe lease receipts"
+        );
+        let previous = self.accepted.get(&snapshot.id);
+        let lease = accept_lease(
+            snapshot,
+            server_id,
+            state,
+            session,
+            request_started,
+            previous,
+        )?;
+        self.accepted
+            .retain(|_, saved| saved.snapshot.expires_at > lease.snapshot.issued_at);
+        self.accepted.insert(lease.snapshot.id, lease.clone());
+        Ok(lease)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct HighWater {
     revision: u64,

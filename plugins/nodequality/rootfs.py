@@ -37,8 +37,10 @@ DIR_MODES = frozenset((0o700, 0o755))
 FILE_MODES = frozenset((0o600, 0o644, 0o755))
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 METADATA_NAMES = frozenset('usr/share/sinan-rootfs/' + name for name in (
-    'provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json'))
+    'provenance.json', 'inputs-lock.json', 'source-inventory.json', 'license-inventory.json',
+    'ipquality-profile.json')) | {'var/lib/dpkg/status'}
 MAX_METADATA = 1024 * 1024
+MAX_PACKAGE_STATUS = 8 * 1024 * 1024
 
 
 def _deadline(end):
@@ -341,12 +343,13 @@ def verify_archive(path, manifest):
 
 def read_metadata(archive_path, manifest, names):
     """Return only fixed small provenance files after complete archive verification."""
-    if (not isinstance(names, (list, tuple)) or not 0 < len(names) <= 4
+    if (not isinstance(names, (list, tuple)) or not 0 < len(names) <= len(METADATA_NAMES)
             or any(not isinstance(name, str) or name not in METADATA_NAMES for name in names)
             or len(set(names)) != len(names)):
         raise ValueError('rootfs metadata selection is outside its fixed whitelist')
     rows = _validate(manifest)
-    if any(rows.get(name, {}).get('type') != 'file' or rows[name]['size'] > MAX_METADATA
+    if any(rows.get(name, {}).get('type') != 'file'
+           or rows[name]['size'] > (MAX_PACKAGE_STATUS if name == 'var/lib/dpkg/status' else MAX_METADATA)
            for name in names):
         raise ValueError('rootfs provenance requires bounded ordinary manifest files')
     captured = {name: io.BytesIO() for name in names}

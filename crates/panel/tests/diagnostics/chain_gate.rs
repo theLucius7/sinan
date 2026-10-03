@@ -108,6 +108,9 @@ async fn queued_full_is_failed_without_finalizing_a_device_and_blocks_until_conf
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19",
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r20",
         "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r21",
+        "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22",
+        "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1",
+        "a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r2",
     ] {
         ids.push(saved_full(&panel, server, version, "queued").await?);
         if ids.len() == 1 {

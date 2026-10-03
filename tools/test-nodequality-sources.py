@@ -20,9 +20,11 @@ import threading
 from unittest import mock
 
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from nodequality_native_fixture_process import OwnedProcesses
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / 'plugins/nodequality'
-VERSION = 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19'
+VERSION = 'a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22'
 FULL_START_GUARD = "[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'"
 
 
@@ -42,6 +44,7 @@ class SourceTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='sinan-pinned-sources-')
         self.root = Path(self.temporary.name)
+        self.processes = OwnedProcesses(self.root)
         self.sources = self.root / 'inputs'
         self.sources.mkdir(mode=0o700)
         self.lock = json.loads((PLUGIN / 'source-lock.json').read_bytes())
@@ -72,7 +75,7 @@ class SourceTests(unittest.TestCase):
                                 SINAN_CHAIN_DIRECTORY=str(self.materialized), NQ_SOURCE_EXECUTED=str(self.executed))
 
     def tearDown(self):
-        self.temporary.cleanup()
+        self.processes.cleanup_temporary(self.temporary, self)
 
     def shim(self, *args):
         return subprocess.run(['bash', str(PLUGIN / 'curl-shim.sh'), *args], env=self.environment,
@@ -156,11 +159,11 @@ class SourceTests(unittest.TestCase):
                                   ('SOURCE_HELPER', 'source-helper.py'), ('REPORT_POLICY_HELPER', 'report-policy.py'), ('SWAP_POLICY_HELPER', 'swap-policy.py'), ('DEPENDENCY_POLICY_HELPER', 'dependency-policy.py'), ('DATA_POLICY_HELPER', 'data-policy.py'), ('LOADER_POLICY_HELPER', 'loader-policy.py'), ('RANKING_POLICY_HELPER', 'ranking-policy.py'), ('IP_SCORE_POLICY_HELPER', 'ip-score-policy.py'), ('NETFLIX_POLICY_HELPER', 'netflix-policy.py'), ('BROWSER_POLICY_HELPER', 'browser-policy.py'), ('PUBLIC_ACCESS_POLICY_HELPER', 'public-access-policy.py'), ('REPORT_HELPER', 'report.py'),
                                   ('EXIT_OBSERVER', 'exit-observer.sh'), ('DAILY_HELPER', 'daily.py'),
                                   ('OFFICIAL_IP_HELPER', 'official-ip.py'), ('EXECUTION_ADMISSION', 'execution-admission.json'),
-                                  ('CURL_SHIM', 'curl-shim.sh'), ('CHROOT_SHIM', 'chroot-shim.sh')]]:
+                                  ('CURL_SHIM', 'runtime-curl.sh'), ('CHROOT_SHIM', 'chroot-shim.sh')]]:
             runner = runner.replace('@' + name + '@\n', payload)
         path = self.root / 'nodequality'
         path.write_text(runner)
-        result = subprocess.run(['bash', str(path), '--workspace', str(workspace), '--mode', 'full', '--ip-version', 'ipv4'],
+        result = self.processes.run(['bash', str(path), '--workspace', str(workspace), '--mode', 'full', '--ip-version', 'ipv4'],
                                 env=dict(self.environment, PATH=str(binaries) + ':' + os.environ['PATH']),
                                 capture_output=True, timeout=6)
         self.assertNotEqual(result.returncode, 0, 'synthetic sources produce no benchmark report')

@@ -602,12 +602,15 @@ class ReleaseTests(unittest.TestCase):
         if payload is not None:
             (self.bundle / self.installer_asset).write_bytes(payload)
         # Execute the actual production path through its first Agent execution.
-        text = (ROOT / "deploy/install.sh.tmpl").read_text()
+        text = release.installer_source(ROOT / "deploy/install.sh.tmpl", ROOT / "deploy/sinan-agent.service",
+                                        ROOT / "plugins/sing-box/sinan-singbox@.service", source_root=ROOT)
         text = text.split("# Reject unverifiable legacy caches", 1)[0] + "\nexit 0\n"
         if core_root:
             text = text.replace("/opt/sinan/core", str(core_root))
         if forced_optimization:
-            text = text.replace("python3 -I - ", "python3 -I -O - ", 1)
+            proof_verifier = 'python3 -I - "$BUNDLE"'
+            self.assertEqual(text.count(proof_verifier), 1, "installer prefix must retain the signed proof verifier")
+            text = text.replace(proof_verifier, 'python3 -I -O - "$BUNDLE"', 1)
         script = self.directory / "verified-installer-prefix.sh"
         script.write_text(text)
         token = self.directory / "fixture-token"

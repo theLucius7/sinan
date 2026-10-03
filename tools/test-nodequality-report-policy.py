@@ -512,23 +512,11 @@ class WiringTests(unittest.TestCase):
         if upload is not None:
             command += ['--upload-report', upload]
         before = len(self.recorder.records)
-        process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, start_new_session=True)
         try:
-            stdout, stderr = process.communicate(timeout=20)
-        except subprocess.TimeoutExpired:
-            # A fixture deadline must also stop its inherited watcher/children.
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.communicate(timeout=2)
-            raise
+            run = self.base.processes.run(command, env=env, timeout=20)
         finally:
             if old:
                 (self.plugin / 'source-helper.py').write_text(content)
-        run = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         if run.returncode and (workspace / 'log.txt').is_file():
             run.stderr += (workspace / 'log.txt').read_bytes()
         records = [json.loads(line) for line in trace.read_text().splitlines()]
