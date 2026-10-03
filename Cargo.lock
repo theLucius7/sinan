@@ -2748,10 +2748,10 @@ dependencies = [
  "libc",
  "rand 0.8.8",
  "reqwest",
- "rustls",
- "rustls-pki-types",
  "rusqlite",
  "rusqlite_migration",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2767,6 +2767,24 @@ dependencies = [
  "tracing",
  "uuid",
  "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "sinan-cloud-api"
+version = "0.3.0"
+dependencies = [
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "futures-util",
+ "hmac",
+ "httpdate",
+ "reqwest",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "sinan-protocol",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2786,7 +2804,6 @@ name = "sinan-panel"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "argon2",
  "axum 0.8.9",
  "base64 0.22.1",
  "blake2",
@@ -2795,14 +2812,9 @@ dependencies = [
  "flate2",
  "futures-util",
  "hmac",
- "httpdate",
  "rand 0.8.8",
  "reqwest",
  "rusqlite",
- "rust-embed",
- "rustls",
- "saphyr-parser",
- "serde",
  "serde_json",
  "sha1",
  "sha2 0.10.9",
@@ -2811,17 +2823,115 @@ dependencies = [
  "sinan-adapter-singbox",
  "sinan-agent-core",
  "sinan-compiler",
+ "sinan-panel-host",
+ "sinan-plugin-alicloud",
+ "sinan-plugin-ddns",
+ "sinan-plugin-singbox",
+ "sinan-protocol",
+ "sqlx",
+ "tar",
+ "tokio",
+ "tokio-tungstenite 0.28.0",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "sinan-panel-host"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "data-encoding",
+ "ed25519-dalek",
+ "flate2",
+ "futures-util",
+ "hmac",
+ "httpdate",
+ "rand 0.8.8",
+ "reqwest",
+ "rust-embed",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
  "sinan-protocol",
  "sqlx",
  "tar",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.28.0",
  "tower-http",
  "tracing",
- "tracing-subscriber",
  "uuid",
  "webauthn-rs",
+]
+
+[[package]]
+name = "sinan-plugin-alicloud"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "serde",
+ "serde_json",
+ "sinan-cloud-api",
+ "sinan-panel-host",
+ "sinan-protocol",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sinan-plugin-ddns"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "futures-util",
+ "httpdate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sinan-cloud-api",
+ "sinan-panel-host",
+ "sinan-protocol",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sinan-plugin-singbox"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "flate2",
+ "futures-util",
+ "rand 0.8.8",
+ "reqwest",
+ "rustls",
+ "saphyr-parser",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sinan-compiler",
+ "sinan-panel-host",
+ "sinan-protocol",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
  "x25519-dalek",
 ]
 

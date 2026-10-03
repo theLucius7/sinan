@@ -2,7 +2,7 @@ use super::{models::*, worker::Claim};
 use crate::{
     AppState,
     error::{ApiError, ApiResult},
-    plugins::singbox::subscription_parser::{ParseStatus, ParsedSubscription},
+    subscription_parser::{ParseStatus, ParsedSubscription},
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

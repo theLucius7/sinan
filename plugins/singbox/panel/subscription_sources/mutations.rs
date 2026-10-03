@@ -1,8 +1,7 @@
 use super::{fetch, jobs, models::*, service};
 use crate::{
-    AppState, auth,
+    AppState, auth, business,
     error::{ApiError, ApiResult},
-    plugins::singbox::business,
 };
 use axum::{
     Json,

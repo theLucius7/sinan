@@ -1,5 +1,5 @@
 use super::*;
-use crate::plugins::cloud_api::test_support::{Mock, Reply};
+use crate::cloud_api::test_support::{Mock, Reply};
 use serde_json::json;
 
 async fn seed(pool: &PgPool) -> (Uuid, Uuid) {
@@ -24,7 +24,7 @@ fn bill(month: &str, token: &str, rows: Value, total: u64) -> Reply {
 fn row(amount: &str, currency: &str) -> Value {
     json!({"InstanceID":"i-testonly","Item":"PayAsYouGoBill","PretaxAmount":amount,"Currency":currency})
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn balance_cache_avoids_repeat_calls_and_retains_stale_value_on_error(pool: PgPool) {
     let (a, _) = seed(&pool).await;
     let now = sinan_protocol::now_timestamp();
@@ -55,7 +55,7 @@ async fn balance_cache_avoids_repeat_calls_and_retains_stale_value_on_error(pool
     assert_eq!(stored.balance_next_at, now + 21900);
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn instance_cache_collects_pages_keeps_currencies_and_refreshes_on_month_rollover(
     pool: PgPool,
 ) {
@@ -97,7 +97,7 @@ async fn instance_cache_collects_pages_keeps_currencies_and_refreshes_on_month_r
     assert!(!requests[0].params.contains_key("PageNum"));
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn incomplete_bills_wrong_resource_and_repeated_pages_never_replace_valid_cache(
     pool: PgPool,
 ) {

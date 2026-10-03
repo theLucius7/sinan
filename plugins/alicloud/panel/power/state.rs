@@ -2,7 +2,7 @@ use super::super::{
     client::Cloud,
     model::{Account, Resource},
 };
-use crate::plugins::cloud_api::Failure;
+use crate::cloud_api::Failure;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

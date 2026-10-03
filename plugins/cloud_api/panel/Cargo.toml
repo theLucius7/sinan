@@ -1,0 +1,32 @@
+[package]
+name = "sinan-cloud-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+# Submodule directories such as `tests/` belong to the library, not to Cargo targets.
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+path = "mod.rs"
+
+[features]
+# Exposes the local provider mock to the tests of dependent plugins.
+test-support = []
+
+[dependencies]
+sinan-protocol.workspace = true
+axum.workspace = true
+base64.workspace = true
+futures-util.workspace = true
+hmac = "0.12"
+httpdate = "1.0.3"
+reqwest.workspace = true
+serde_json.workspace = true
+sha1 = "0.10"
+sha2.workspace = true
+tokio.workspace = true
+uuid.workspace = true

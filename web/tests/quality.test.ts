@@ -4,7 +4,7 @@ import { qualityValue } from '../src/quality'
 import type { QualityField } from '../src/types'
 
 test('legacy UI field types agree with every registered backend field', () => {
-  const source = readFileSync(new URL('../../crates/panel/src/ip_quality/fields.rs', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../../crates/panel-host/src/ip_quality/fields.rs', import.meta.url), 'utf8')
   const kindNames: Record<string, NonNullable<QualityField['kind']>> = { Text: 'text', CountryCode: 'country_code', Boolean: 'boolean', Score: 'score', Asn: 'asn', Latitude: 'latitude', Longitude: 'longitude' }
   let checked = 0
   for (const database of source.matchAll(/"([a-z0-9-]+)" => &\[([\s\S]*?)\n        \],/g)) {

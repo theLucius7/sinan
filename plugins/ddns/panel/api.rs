@@ -207,8 +207,7 @@ fn credentials(input: &Write, previous: Option<&Rule>) -> ApiResult<(String, Str
             ))
         }
         (Some(key), Some(secret))
-            if crate::plugins::cloud_api::credential(&key)
-                && crate::plugins::cloud_api::credential(&secret) =>
+            if crate::cloud_api::credential(&key) && crate::cloud_api::credential(&secret) =>
         {
             Ok((String::new(), key, secret))
         }

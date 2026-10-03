@@ -6,7 +6,7 @@ use sinan_protocol::now_timestamp;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn authenticated_partial_reports_are_atomic_idempotent_and_device_scoped(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -74,7 +74,7 @@ async fn authenticated_partial_reports_are_atomic_idempotent_and_device_scoped(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn failed_fresh_attempt_retains_success_and_older_generation_only_changes_history(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -130,7 +130,7 @@ async fn failed_fresh_attempt_retains_success_and_older_generation_only_changes_
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn a_discovery_failure_invalidates_current_observation_without_erasing_old_data(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -171,7 +171,7 @@ async fn a_discovery_failure_invalidates_current_observation_without_erasing_old
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn chapter_storage_failure_rolls_back_cache_and_watermark_together(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -206,7 +206,7 @@ async fn chapter_storage_failure_rolls_back_cache_and_watermark_together(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn unrelated_cleanup_or_cancellation_blocks_new_ip_work_after_its_expiry(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -237,7 +237,7 @@ async fn unrelated_cleanup_or_cancellation_blocks_new_ip_work_after_its_expiry(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../panel/migrations")]
 async fn later_partial_dataset_preserves_completed_siblings_and_success_times(
     pool: PgPool,
 ) -> anyhow::Result<()> {

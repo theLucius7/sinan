@@ -26,22 +26,24 @@
 | --- | --- |
 | `protocol` | 面板与 Agent 的共享消息、能力、签名制品契约 |
 | `compiler` | 从业务模型确定性地生成完整运行时配置包 |
-| `panel` | HTTP 服务、管理员会话、服务器、遥测、通知、任务和插件嵌入 |
+| `panel-host` | 面板宿主：HTTP 服务、管理员会话、服务器、遥测、通知、任务、共用诊断服务和插件接口；工作区依赖仅 `protocol`，不认识具体业务插件 |
+| `plugins/*/panel` | 业务插件 crate（sing-box、DDNS、阿里云）及云 API 公共库；工作区依赖仅宿主、`protocol`、`compiler` 和云 API 公共库，插件之间不互相依赖 |
+| `panel` | 组装：登记业务插件并启动服务；保存唯一的迁移序列，保留原有 `sinan_panel::*` Rust 路径 |
 | `agent-core` | 设备身份、传输、对账、持久状态、遥测、计量与制品；工作区依赖仅 `protocol`、`adapter-sdk` |
 | `adapter-sdk` | 无状态适配器接口与共享模型 |
 | `adapter-singbox`、`adapter-nodequality`、`adapter-tcpquality` | 运行时或工具翻译；工作区依赖仅 `adapter-sdk` |
 | `agent` | 注册具体适配器、启动 core 的二进制入口 |
 | `tcp-probe` | 原生 TCP 检测工具 |
 
-服务器网卡总流量属于核心；代理用户、授权、订阅、套餐与代理流量属于 sing-box 插件。`agent-core` 不引入具体插件名称或代理业务类型；分层检查入口为 `tools/check-core-boundary.py`。
+服务器网卡总流量属于核心；代理用户、授权、订阅、套餐与代理流量属于 sing-box 插件。`agent-core` 和 `panel-host` 都不引入具体插件名称或代理业务类型。分层检查入口为 `tools/check-core-boundary.py`，同时检查两个核心目录的禁用词和各层 `Cargo.toml` 的依赖方向。
 
 ## 面板入口与插件
 
-`crates/panel/src/lib.rs` 声明模块并保留原有公共导出；`state.rs` 创建共享状态，`main.rs` 启动服务与后台任务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。HTTP 路由在 `routes/` 按职责组合：
+面板分为宿主、插件和组装三层（[ADR 0079](adr/0079-rearchitecture-plugins-sources-chains.md)）。`crates/panel-host/src/lib.rs` 声明宿主模块；`state.rs` 创建共享状态；`plugin_api.rs` 定义插件接口。`crates/panel/src/` 只负责组装：`lib.rs` 再导出宿主模块并保留原有公共路径，`plugins.rs` 登记业务插件，`main.rs` 启动服务与后台任务。`passkeys/` 提供共用 WebAuthn 验证、挑战和凭据存储，管理员包装在 `auth/`，代理用户入口、邀请和独立会话在 `plugins/singbox/panel/portal/`。宿主的 HTTP 路由在 `crates/panel-host/src/routes/` 按职责组合：
 
 | 文件 | 注册的接口 |
 | --- | --- |
-| `routes/mod.rs` | 健康检查、各组路由、插件、前端兜底及全局请求体限制 |
+| `routes/mod.rs` | 健康检查、各组路由、组装时传入的插件路由、前端兜底及全局请求体限制 |
 | `routes/system.rs` | 登录/TOTP/管理员 Passkey、统计、汇率、设置与通知 |
 | `routes/servers.rs` | 服务器、接入令牌、遥测配置、命令、周期拨测和流量矫正 |
 | `routes/diagnostics.rs` | IP 查询、共用诊断服务、旧诊断路径与 TCP 目标 |
@@ -50,9 +52,14 @@
 
 路由文件只组合处理函数，鉴权和业务校验仍由原处理函数负责。`sinan_panel::router`、`AppState`、`AgentConnection` 及旧代理业务 Rust 导出继续可用。新增接口按职责归组，不再把所有接口堆入 crate 根文件。
 
-`crates/panel/src/plugins/mod.rs` 通过薄的 path 桥连接 `plugins/singbox/panel/`、`plugins/ddns/panel/`、`plugins/alicloud/panel/`；`plugins/cloud_api/panel/` 是云 API 的共享实现，不是独立产品插件。诊断登记桥 `diagnostic_plugins.rs` 连接 NodeQuality/TCP 适配实现，共用诊断服务继续负责生命周期、预算、取消和历史。
+插件接口：
 
-数据库迁移保持在 `crates/panel/migrations/`，按既有序列追加；不能为整理文件而重命名、合并或修改已发布迁移。
+- 宿主通过 `plugin_api::PanelPlugins` 把 Agent 通道上的用量入账、模块清单、配置包和运行活动查询交给插件。组装层在构造路由和启动后台任务时登记一次。
+- 插件路由由组装层传入宿主的 `router`；插件后台任务由组装层分别守护，一个插件崩溃不会停掉其他插件。
+- `plugins/singbox/panel/`、`plugins/ddns/panel/`、`plugins/alicloud/panel/` 各自是独立 crate，只经宿主公开接口使用面板能力。`plugins/cloud_api/panel/` 是云 API 公共库，不是独立产品插件。
+- 诊断插件（IP 质量、NodeQuality、TCP 质量）暂时仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入，共用诊断服务继续负责生命周期、预算、取消和历史。它们与宿主的 IP 质量和诊断类型互相引用，拆成独立 crate 前需要先把共用类型移入宿主接口。
+
+数据库迁移保持在 `crates/panel/migrations/`，按既有序列追加；宿主通过 `sqlx::migrate!("../panel/migrations")` 嵌入这一条序列，插件 crate 的数据库测试也指向它。不能为整理文件而重命名、合并或修改已发布迁移。
 
 ## 前端入口
 

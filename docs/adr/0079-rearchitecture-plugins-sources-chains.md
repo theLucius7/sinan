@@ -1,6 +1,6 @@
 # ADR 0079：重新架构：插件边界、订阅来源与链路模型
 
-- 状态：提议，待用户确认范围后实施。
+- 状态：已接受。阶段一已实施；阶段二随后实施；阶段三另写详细迁移方案，单独授权后实施。
 - 日期：2026-10-03。
 - 关联：[全仓缺陷扫描](../acceptance/defect-scan-20261003.md) D17；[ADR 0040](0040-mixed-chains-and-subscriptions.md)、[ADR 0072](0072-subscription-source-lifecycle.md)、[ADR 0076](0076-node-catalog-and-external-access.md)、[ADR 0078](0078-admin-layout-and-node-sections.md)。
 
@@ -82,14 +82,37 @@
 
 按仓库规则，生产迁移、发布和实机验收需要单独授权。实施前另写详细迁移方案，包括字段映射、身份与凭据保留规则、回滚方式和演练步骤。
 
-## 待确认的问题
+## 已确认的问题
 
-- 实施范围：是否先做阶段一、二，阶段三另出迁移方案后再授权。
-- 阶段三中来源统一的方向：
+- 实施范围：先做阶段一、二；阶段三另出详细迁移方案，再单独授权。
+- 阶段三中来源统一的方向，在写阶段三详细方案时比较后再定：
   - 以 B 为准：ordered 链路依赖 B 的修订代和身份状态，类型化程度更高，但要把节点库、外部授权和预览采用迁到 B，并把外部节点编号从数字改为 UUID。
   - 以 A 为准：节点库和外部授权不动，但要给 A 补上修订代、身份状态和幂等记录，并改写 ordered 链路的订阅段引用。
-  - 可在阶段三的详细方案中比较后再定。
-- D16：是否为前端引入格式化工具（新增开发依赖），一次性统一格式。
+- D16：暂不为前端引入格式化工具，只拆分本轮改动文件中的超长行。
+
+## 阶段一实施说明
+
+- **crate 划分：**
+  - 宿主 `crates/panel-host`（`sinan-panel-host`）：原 `crates/panel/src` 中除入口与插件桥之外的全部模块，含共用诊断服务。
+  - 业务插件：`plugins/singbox/panel`（`sinan-plugin-singbox`）、`plugins/ddns/panel`（`sinan-plugin-ddns`）、`plugins/alicloud/panel`（`sinan-plugin-alicloud`）。
+  - 云 API 公共库：`plugins/cloud_api/panel`（`sinan-cloud-api`）。它的本地模拟服务只在测试或 `test-support` 特性下编译，供两个云插件的测试使用。
+  - 组装：`crates/panel`（`sinan-panel`）。
+  - 各插件目录保持原位置。`[lib] path = "mod.rs"` 让原有模块树不变；关闭自动发现目标，避免把作为子模块的 `tests/` 目录当成集成测试。
+- **插件接口：**
+  - 宿主的 `plugin_api::PanelPlugins` 覆盖用量入账、模块清单、配置包和运行活动查询。NodeQuality 也改为通过这个接口查询运行活动，不再直接引用 sing-box。
+  - 插件路由由组装层作为参数传给宿主的 `router`；后台任务由组装层分别守护。
+- **登记方式：**
+  - 插件集合登记在宿主的进程级只登记一次的槽位中，由组装层在构造路由和启动后台任务时登记。
+  - 没有放进 `AppState`，是因为测试和嵌入方直接调用 `AppState::new(pool, config)`。为保持这个公共签名，不给它增加参数。
+  - 未登记时，宿主采用保守默认：用量入账报错并保持未确认、模块清单为空、配置包不存在、运行活动为“未配置”。
+- **迁移：** 迁移仍是一条序列，留在 `crates/panel/migrations`。宿主用相对路径嵌入它；插件 crate 内的数据库单元测试也显式指向它。
+- **公共路径：** 组装 crate 再导出宿主模块和插件，原有 `sinan_panel::*` 路径（含 `sinan_panel::plugins::singbox`、`sinan_panel::usage` 等）保持可用，集成测试不改路径。
+- **分层检查：** `tools/check-core-boundary.py` 现在同时检查：
+  - `agent-core` 与 `panel-host` 两个目录的禁用词；宿主的例外表达式逐条列出，如 HTTP `User-Agent` 和 URL 用户信息测试夹具。
+  - Agent 核心、适配器、面板宿主和业务插件 `Cargo.toml` 中的工作区依赖方向。
+- **未拆分的部分：**
+  - 三个诊断插件（IP 质量、NodeQuality、TCP 质量）仍由宿主的 `diagnostic_plugins.rs` 通过 path 编入。它们与宿主的 IP 质量、诊断类型互相引用，拆分需要先把共用类型提升为宿主接口，留到后续独立步骤。
+  - 这三个插件的源码物理位于 `plugins/` 下，不在宿主目录的禁用词检查范围内。
 
 ## 替代方案
 

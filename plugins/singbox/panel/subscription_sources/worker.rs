@@ -7,7 +7,7 @@ use super::{
 use crate::{
     AppState,
     error::ApiResult,
-    plugins::singbox::subscription_parser::{self, FormatHint, PARSER_VERSION},
+    subscription_parser::{self, FormatHint, PARSER_VERSION},
 };
 use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection};

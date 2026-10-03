@@ -1,13 +1,16 @@
-pub(crate) mod aliyun;
-pub(crate) mod signing;
-#[cfg(test)]
-pub(crate) mod test_support;
+#![forbid(unsafe_code)]
+//! Shared signing and transport for the cloud provider plugins.
+
+pub mod aliyun;
+pub mod signing;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;
-pub(crate) mod transport;
+pub mod transport;
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Failure {
+pub struct Failure {
     pub code: &'static str,
     pub retry_after: i64,
 }
@@ -21,7 +24,7 @@ impl From<&'static str> for Failure {
     }
 }
 
-pub(crate) fn credential(value: &str) -> bool {
+pub fn credential(value: &str) -> bool {
     (8..=256).contains(&value.len())
         && value
             .bytes()

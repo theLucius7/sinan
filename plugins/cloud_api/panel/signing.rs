@@ -7,7 +7,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-pub(crate) fn encode(value: &str) -> String {
+pub fn encode(value: &str) -> String {
     let mut result = String::new();
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
@@ -20,7 +20,7 @@ pub(crate) fn encode(value: &str) -> String {
     result
 }
 
-pub(crate) fn query(values: &BTreeMap<String, String>) -> String {
+pub fn query(values: &BTreeMap<String, String>) -> String {
     values
         .iter()
         .map(|(key, value)| format!("{}={}", encode(key), encode(value)))
@@ -28,7 +28,7 @@ pub(crate) fn query(values: &BTreeMap<String, String>) -> String {
         .join("&")
 }
 
-pub(crate) fn huawei_query(url: &reqwest::Url) -> String {
+pub fn huawei_query(url: &reqwest::Url) -> String {
     // Signing must retain every transmitted pair, including repeated names.
     let mut pairs: Vec<_> = url
         .query_pairs()
@@ -42,7 +42,7 @@ pub(crate) fn huawei_query(url: &reqwest::Url) -> String {
         .join("&")
 }
 
-pub(crate) fn iso_time(timestamp: i64) -> String {
+pub fn iso_time(timestamp: i64) -> String {
     let date = httpdate::fmt_http_date(
         UNIX_EPOCH + Duration::from_secs(timestamp.clamp(0, 253402300799) as u64),
     );
@@ -57,7 +57,7 @@ pub(crate) fn iso_time(timestamp: i64) -> String {
     format!("{}-{month:02}-{}T{}Z", parts[3], parts[1], parts[4])
 }
 
-pub(crate) fn hash(bytes: impl AsRef<[u8]>) -> String {
+pub fn hash(bytes: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
 
@@ -71,7 +71,7 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-pub(crate) fn aliyun(secret: &str, parameters: &BTreeMap<String, String>) -> String {
+pub fn aliyun(secret: &str, parameters: &BTreeMap<String, String>) -> String {
     let text = format!("POST&%2F&{}", encode(&query(parameters)));
     let mut signer =
         Hmac::<Sha1>::new_from_slice(format!("{secret}&").as_bytes()).expect("HMAC key");
@@ -79,7 +79,7 @@ pub(crate) fn aliyun(secret: &str, parameters: &BTreeMap<String, String>) -> Str
     STANDARD.encode(signer.finalize().into_bytes())
 }
 
-pub(crate) fn tencent(
+pub fn tencent(
     id: &str,
     secret: &str,
     host: &str,
@@ -105,7 +105,7 @@ pub(crate) fn tencent(
     )
 }
 
-pub(crate) fn huawei(
+pub fn huawei(
     id: &str,
     secret: &str,
     method: &str,

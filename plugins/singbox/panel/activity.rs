@@ -1,6 +1,6 @@
-use crate::{error::ApiResult, plugins::ActivityEvidence};
+use crate::{error::ApiResult, plugin_api::ActivityEvidence};
 
-pub(in crate::plugins) async fn runtime_activity_on(
+pub async fn runtime_activity_on(
     connection: &mut sqlx::PgConnection,
     server_id: i64,
     checked_at: i64,

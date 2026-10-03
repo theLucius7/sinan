@@ -1,5 +1,5 @@
 use super::*;
-use crate::plugins::cloud_api::{signing, transport};
+use crate::cloud_api::{signing, transport};
 use serde_json::json;
 
 pub(super) struct Tencent {

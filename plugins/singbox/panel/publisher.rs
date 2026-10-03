@@ -1,6 +1,6 @@
 use crate::{
     AppState, agent_api,
-    plugins::singbox::business::{NODE_COLUMNS, NodeRow},
+    business::{NODE_COLUMNS, NodeRow},
 };
 use sinan_compiler::{Access, Node};
 use sinan_protocol::{Bundle, Envelope, ManifestChanged, now_timestamp};

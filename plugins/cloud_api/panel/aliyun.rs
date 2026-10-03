@@ -2,14 +2,14 @@ use super::{Failure, signing, transport};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-pub(crate) struct Aliyun {
+pub struct Aliyun {
     client: reqwest::Client,
     endpoint: String,
     version: &'static str,
 }
 
 impl Aliyun {
-    pub(crate) fn new(service: &str) -> Result<Self, Failure> {
+    pub fn new(service: &str) -> Result<Self, Failure> {
         let (host, version) = match service {
             "alidns" => ("alidns.aliyuncs.com", "2015-01-09"),
             "ecs" => ("ecs.aliyuncs.com", "2014-05-26"),
@@ -26,8 +26,8 @@ impl Aliyun {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn local(service: &str, endpoint: &str) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn local(service: &str, endpoint: &str) -> Self {
         assert_eq!(
             reqwest::Url::parse(endpoint).unwrap().host_str(),
             Some("127.0.0.1")
@@ -37,7 +37,7 @@ impl Aliyun {
         result
     }
 
-    pub(crate) async fn call(
+    pub async fn call(
         &self,
         id: &str,
         secret: &str,
@@ -46,7 +46,7 @@ impl Aliyun {
     ) -> Result<Value, Failure> {
         self.request(id, secret, action, parameters, false).await
     }
-    pub(crate) async fn power_call(
+    pub async fn power_call(
         &self,
         id: &str,
         secret: &str,

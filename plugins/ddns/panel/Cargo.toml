@@ -1,0 +1,33 @@
+[package]
+name = "sinan-plugin-ddns"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+# Submodule directories such as `tests/` belong to the library, not to Cargo targets.
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+path = "mod.rs"
+
+[dependencies]
+sinan-panel-host.workspace = true
+sinan-cloud-api.workspace = true
+sinan-protocol.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+httpdate = "1.0.3"
+tracing.workspace = true
+
+[dev-dependencies]
+sinan-cloud-api = { workspace = true, features = ["test-support"] }

@@ -1,5 +1,5 @@
 use super::{provider::Mock, *};
-use crate::plugins::ddns::{editable, load, worker};
+use crate::{editable, load, worker};
 use sqlx::PgPool;
 
 async fn seed(pool: &PgPool) -> anyhow::Result<Uuid> {
@@ -27,7 +27,7 @@ async fn due(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn plugin_disable_blocks_claims_preserves_rules_and_cannot_acknowledge_during_io(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -64,7 +64,7 @@ async fn plugin_disable_blocks_claims_preserves_rules_and_cannot_acknowledge_dur
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn scheduler_persists_success_and_does_not_repeat_unchanged_writes(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -93,7 +93,7 @@ async fn scheduler_persists_success_and_does_not_repeat_unchanged_writes(
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn missing_stale_offline_and_retired_ips_preserve_dns_without_external_requests(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -125,7 +125,7 @@ async fn missing_stale_offline_and_retired_ips_preserve_dns_without_external_req
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn leases_exclude_parallel_work_block_edits_and_recover_after_expiry(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -161,7 +161,7 @@ async fn leases_exclude_parallel_work_block_edits_and_recover_after_expiry(
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn rate_limit_backoff_survives_retries_without_exposing_response_or_losing_success(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -195,7 +195,7 @@ async fn rate_limit_backoff_survives_retries_without_exposing_response_or_losing
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn changes_during_provider_reads_stop_before_any_dns_write(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -238,7 +238,7 @@ async fn changes_during_provider_reads_stop_before_any_dns_write(
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn a_retirement_committing_while_the_write_guard_waits_is_observed(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -284,7 +284,7 @@ async fn a_retirement_committing_while_the_write_guard_waits_is_observed(
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn an_inflight_write_holds_the_rule_and_server_lifecycle_locks(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -340,7 +340,7 @@ async fn an_inflight_write_holds_the_rule_and_server_lifecycle_locks(
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn special_range_reported_ips_never_contact_cloudflare(pool: PgPool) -> anyhow::Result<()> {
     let id = seed(&pool).await?;
     let rule = load(&pool, id).await?;
@@ -373,11 +373,11 @@ async fn special_range_reported_ips_never_contact_cloudflare(pool: PgPool) -> an
     Ok(())
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn old_completion_never_overwrites_a_new_revision_after_an_expired_lease(
     pool: PgPool,
 ) -> anyhow::Result<()> {
-    use crate::plugins::ddns::cloudflare::{Failure, Outcome};
+    use crate::cloudflare::{Failure, Outcome};
     for success in [true, false] {
         let id = seed(&pool).await?;
         let old = load(&pool, id).await?;

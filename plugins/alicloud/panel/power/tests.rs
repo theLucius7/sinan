@@ -1,6 +1,6 @@
 use super::super::{account_on, billing, client::Cloud, lock, model::Resource, operations};
 use super::{State, api, jobs, policy::Policy, scheduler};
-use crate::plugins::cloud_api::test_support::{Mock, Reply};
+use crate::cloud_api::test_support::{Mock, Reply};
 use serde_json::json;
 use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
@@ -66,7 +66,7 @@ async fn force_due(pool: &PgPool, id: Uuid) {
         .await
         .unwrap();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn stop_is_confirmed_once_and_recovers_without_duplicate_write(pool: PgPool) {
     let (_, r) = seed(&pool).await;
     let initial = state("Running", "KeepCharging");
@@ -106,7 +106,7 @@ async fn stop_is_confirmed_once_and_recovers_without_duplicate_write(pool: PgPoo
     assert!(!requests[1].params.contains_key("ClientToken"));
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn crash_after_intent_only_reads_state_and_mode_mismatch_is_not_success(pool: PgPool) {
     let (_, r) = seed(&pool).await;
     let id = prepare(
@@ -131,7 +131,7 @@ async fn crash_after_intent_only_reads_state_and_mode_mismatch_is_not_success(po
     assert_eq!(job.error_code.as_deref(), Some("stop_mode_mismatch"));
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn cancellation_revision_changes_and_bandwidth_interlock_block_writes(pool: PgPool) {
     let (_, r) = seed(&pool).await;
     let id = prepare(
@@ -172,7 +172,7 @@ async fn cancellation_revision_changes_and_bandwidth_interlock_block_writes(pool
     assert_eq!(jobs::load(&pool, id).await.unwrap().status, "cancelled");
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn start_rejection_is_terminal_but_unknown_write_remains_uncertain(pool: PgPool) {
     let (_, r) = seed(&pool).await;
     let s = state("Stopped", "KeepCharging");
@@ -245,7 +245,7 @@ async fn evaluate(pool: &PgPool, a: Uuid, r: Uuid, s: &State, now: i64) -> Resou
     tx.commit().await.unwrap();
     r
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let now = sinan_protocol::now_timestamp();
@@ -303,7 +303,7 @@ async fn threshold_is_sticky_and_preempts_start_notify_is_deduplicated(pool: PgP
             .threshold_hold
     );
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn manual_hold_and_non_spot_instances_disable_keepalive_and_schedule_deduplicates(
     pool: PgPool,
 ) {

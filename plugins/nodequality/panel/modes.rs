@@ -19,7 +19,7 @@ pub async fn activity_on(
     server: i64,
 ) -> ApiResult<ProxyActivity> {
     let now = now_timestamp();
-    let evidence = crate::plugins::runtime_activity_on(connection, server, now).await?;
+    let evidence = crate::plugin_api::runtime_activity_on(connection, server, now).await?;
     let latest = evidence.last_positive_at;
     let (state, reason) = if latest.is_some_and(|sampled| sampled >= now - 60) {
         (

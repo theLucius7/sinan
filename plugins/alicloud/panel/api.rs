@@ -106,9 +106,7 @@ impl AccountWrite {
                     account.access_key_secret.clone(),
                 ));
             }
-        } else if crate::plugins::cloud_api::credential(key)
-            && crate::plugins::cloud_api::credential(secret)
-        {
+        } else if crate::cloud_api::credential(key) && crate::cloud_api::credential(secret) {
             return Ok((key.into(), secret.into()));
         }
         Err(ApiError::BadRequest(

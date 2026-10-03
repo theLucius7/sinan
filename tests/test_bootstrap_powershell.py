@@ -202,7 +202,7 @@ class PowerShellBootstrapTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('rustc'), 'requires rustc to exercise the actual launcher quote function')
     def test_rust_launcher_quote_recovers_all_arguments_without_smart_quote_injection(self):
-        source = (ROOT / 'crates/panel/src/installation/windows.rs').read_text()
+        source = (ROOT / 'crates/panel-host/src/installation/windows.rs').read_text()
         function = re.search(r'(?ms)^fn quote\(value: &str\) -> String \{.*?^\}', source).group()
         harness = self.directory / 'quote.rs'
         harness.write_text(function + '\nfn main() { for value in std::env::args().skip(1) { for byte in quote(&value).as_bytes() { print!("{byte:02x}"); } println!(); } }\n')

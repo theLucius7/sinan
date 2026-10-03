@@ -34,7 +34,7 @@ fn compatibility_traffic_validates_every_region_and_never_silently_invents_zero(
         assert!(billing::traffic(&value, 100).is_err());
     }
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn bill_collects_all_pages_exactly_and_rejects_unknown_units_and_pagination_drift(
     pool: PgPool,
 ) {
@@ -85,7 +85,7 @@ async fn bill_collects_all_pages_exactly_and_rejects_unknown_units_and_paginatio
     );
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_per_configuration(
     pool: PgPool,
 ) {
@@ -163,7 +163,7 @@ async fn auto_control_requires_opt_in_fresh_current_bill_and_only_lowers_once_pe
         1
     );
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_stale_counters(
     pool: PgPool,
 ) {
@@ -198,7 +198,7 @@ async fn missing_or_unreadable_bill_preserves_history_and_cannot_trigger_with_st
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn automatic_lowering_verifies_the_result_without_switching_charge_mode(pool: PgPool) {
     let (account_id, id) = seed(&pool, "ecs").await;
     sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
@@ -244,7 +244,7 @@ async fn automatic_lowering_verifies_the_result_without_switching_charge_mode(po
     assert!(!write.params.contains_key("NetworkChargeType"));
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgPool) {
     let (account_id, id) = seed(&pool, "ecs").await;
     sqlx::query("UPDATE alicloud_accounts SET auto_enabled=true WHERE id=$1")
@@ -305,7 +305,7 @@ async fn bill_errors_preserve_old_display_but_revoke_control_authority(pool: PgP
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_authority(
     pool: PgPool,
 ) {
@@ -364,7 +364,7 @@ async fn refund_adjustment_and_missing_bill_identity_keep_rows_without_control_a
     mock.exhausted();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn repeated_billing_dimensions_with_changed_values_are_not_additional_usage(pool: PgPool) {
     let (id, _) = seed(&pool, "ecs").await;
     let account = account(&pool, id).await;

@@ -58,6 +58,42 @@ class CoreBoundaryTests(unittest.TestCase):
             (root / "new.sql").write_text("SELECT quota FROM state")
             self.assertFalse(boundary.check(root))
 
+    def test_panel_host_passes_and_its_exceptions_stay_scoped(self):
+        root = SCRIPT.parents[1]
+        self.assertTrue(boundary.check(root / "crates/panel-host", boundary.HOST_EXCEPTIONS))
+        relative, source = "src/exchange/fetch.rs", '.user_agent("Sinan-exchange-rates/1")'
+        self.assertFalse(boundary.violations(relative, source, boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations(relative, source))
+        self.assertTrue(boundary.violations("src/servers.rs", source, boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations(relative, source + "; user_id", boundary.HOST_EXCEPTIONS))
+        self.assertTrue(boundary.violations("src/lib.rs", "pub mod singbox;", boundary.HOST_EXCEPTIONS))
+
+    def test_plugins_depend_on_the_host_and_never_the_reverse(self):
+        self.assertTrue(boundary.check_dependencies(SCRIPT.parents[1]))
+        manifests = {
+            "crates/agent-core/Cargo.toml": "[dependencies]\nsinan-protocol.workspace = true\n",
+            "crates/panel-host/Cargo.toml": "[dependencies]\nsinan-protocol.workspace = true\n",
+            "plugins/ddns/panel/Cargo.toml": "[dependencies]\nsinan-panel-host.workspace = true\n",
+        }
+        broken = {
+            "crates/panel-host/Cargo.toml": "[dev-dependencies]\nsinan-plugin-singbox.workspace = true\n",
+            "plugins/ddns/panel/Cargo.toml": "[dependencies]\nsinan-plugin-singbox.workspace = true\n",
+            "crates/agent-core/Cargo.toml": "[target.'cfg(unix)'.dependencies]\nsinan-adapter-singbox.workspace = true\n",
+        }
+        for path, manifest in broken.items():
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                for relative, text in {**manifests, path: manifest}.items():
+                    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                    (root / relative).write_text(text)
+                self.assertFalse(boundary.check_dependencies(root))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative, text in manifests.items():
+                (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (root / relative).write_text(text)
+            self.assertTrue(boundary.check_dependencies(root))
+
 
 if __name__ == "__main__":
     unittest.main()

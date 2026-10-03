@@ -1,9 +1,9 @@
 use super::*;
-use crate::plugins::cloud_api::{
+use crate::cloud_api::{
     Failure,
     test_support::{Mock, Reply},
 };
-use crate::plugins::ddns::{cloudflare::Outcome, model::Provider, worker};
+use crate::{cloudflare::Outcome, model::Provider, worker};
 
 #[path = "multicloud_boundaries.rs"]
 mod boundaries;
@@ -244,7 +244,7 @@ async fn foreign_records_duplicates_wrong_names_and_multi_value_sets_are_never_o
     );
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn submitted_dns_update_keeps_previous_confirmed_address_and_timestamp(pool: sqlx::PgPool) {
     let server: i64 =
         sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY DDNS') RETURNING id")

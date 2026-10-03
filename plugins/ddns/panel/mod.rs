@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+//! DDNS plugin: reconciles DNS records with addresses reported by devices.
+
 mod api;
 mod cloudflare;
 mod model;
@@ -9,6 +12,9 @@ mod worker;
 
 pub use api::routes;
 pub use worker::run;
+
+pub(crate) use sinan_cloud_api as cloud_api;
+pub(crate) use sinan_panel_host::{AppState, auth, error, ip_quality};
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};

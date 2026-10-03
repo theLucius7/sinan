@@ -4,7 +4,7 @@ use reqwest::{Client, RequestBuilder};
 use serde_json::Value;
 use std::time::{Duration, SystemTime};
 
-pub(crate) fn client() -> Result<Client, Failure> {
+pub fn client() -> Result<Client, Failure> {
     Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -15,13 +15,13 @@ pub(crate) fn client() -> Result<Client, Failure> {
         .map_err(|_| "client_error".into())
 }
 
-pub(crate) async fn json(request: RequestBuilder) -> Result<Value, Failure> {
+pub async fn json(request: RequestBuilder) -> Result<Value, Failure> {
     json_inner(request, false).await
 }
-pub(crate) async fn power_json(request: RequestBuilder) -> Result<Value, Failure> {
+pub async fn power_json(request: RequestBuilder) -> Result<Value, Failure> {
     json_inner(request, true).await
 }
-pub(crate) fn power_rejection(value: &Value) -> Option<&'static str> {
+pub fn power_rejection(value: &Value) -> Option<&'static str> {
     match value["Code"].as_str()? {
         "OperationDenied.NoStock"
         | "Invalid.PrivatePoolOptions.NoStock"
@@ -87,7 +87,7 @@ async fn json_inner(request: RequestBuilder, power: bool) -> Result<Value, Failu
     Ok(value)
 }
 
-pub(crate) fn retry_after(value: &str, now: SystemTime) -> Option<i64> {
+pub fn retry_after(value: &str, now: SystemTime) -> Option<i64> {
     let value = value.trim();
     let seconds = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
         value.parse::<u64>().ok()?

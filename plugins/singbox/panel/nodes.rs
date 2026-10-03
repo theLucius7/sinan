@@ -2,8 +2,8 @@ use super::{node_protocol::ProtocolInput, node_settings::SettingsInput};
 use crate::{
     AppState,
     auth::require_admin,
+    business::{self, NODE_COLUMNS, NodeChainReference, NodeRow, NodeView},
     error::{ApiError, ApiResult},
-    plugins::singbox::business::{self, NODE_COLUMNS, NodeChainReference, NodeRow, NodeView},
 };
 use axum::{
     Json,

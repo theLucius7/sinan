@@ -19,7 +19,7 @@
 
 ## 本地规则与回归
 
-- `check-core-boundary.py`：检查核心/插件依赖及禁用词边界。
+- `check-core-boundary.py`：检查 `agent-core` 与面板宿主的禁用词，以及 Agent 核心、适配器、面板宿主和业务插件 `Cargo.toml` 的依赖方向。
 - `verify-release-runtime.py`：核验 Release 中运行时与声明的一致性。
 - `test-*.py`：同目录工具、策略、构建脚本和夹具的回归；根 `tests/test_*.py` 也覆盖部分工具。
 - `test-*.cjs`：既有前端浏览器夹具；较新的前端回归位于 `web/tests/`。

@@ -28,7 +28,10 @@
 - 只有 `agent` 二进制入口同时依赖 core 和具体适配器，并将适配器注册到 core。
 - `agent-core` 目录内任何文件不得出现 `singbox` 或 `sing-box` 字样；使用模块标识、能力和统一接口。
 - core 管服务器；sing-box 插件管代理用户、授权、订阅、用户流量、配额和周期，详见 [ADR 0023](docs/adr/0023-proxy-business-boundary.md) 与 [搬迁及启用兼容 ADR 0030](docs/adr/0030-singbox-plugin-business.md)。core 不得引用代理业务的 `user`、`subscription`、`quota`，含复数、蛇形和驼峰形式；CI 使用 `tools/check-core-boundary.py` 检查。系统账户与 SQLite 原生 API 仅允许检查器列出的具体表达式，不允许文件或整行豁免。
-- sing-box 面板业务实现物理位于根 `plugins/singbox/panel/`；面板只保留薄的 Rust path 嵌入桥，不得移回 `crates/panel/src/plugins/`。
+- 面板分宿主、插件和组装三层，见 [ADR 0079](docs/adr/0079-rearchitecture-plugins-sources-chains.md)：
+  - 宿主 `crates/panel-host` 的工作区依赖只能是 `protocol`，通过插件接口与业务插件交互，不得命名具体业务插件；目录内同样禁止 sing-box 名称和上述代理业务词汇，例外表达式由检查器逐条列出。
+  - 业务插件（sing-box、DDNS、阿里云）是 `plugins/*/panel/` 下的独立 crate，工作区依赖只能是宿主、`protocol`、`compiler` 和云 API 公共库 `plugins/cloud_api/panel/`，插件之间不互相依赖；插件业务不得移回宿主或组装 crate。
+  - 只有 `sinan-panel` 同时依赖宿主和具体插件，负责登记插件并保存唯一的迁移序列。
 - 系统管理员与代理用户分别命名；服务器网卡总流量留在 core。计量 `epoch` 只标记计数器重置，不得用作套餐周期。业务搬迁保留用户 ID、令牌、旧订阅路径、节点凭据、授权和历史流量，数据库表先不改名。
 - 诊断任务生命周期、资源预算、持久化、取消及历史由共用服务管理；插件只转换参数、执行和解析报告，见 [ADR 0028](docs/adr/0028-shared-diagnostic-job-service.md)。后续插件登记代码可以经独立审查和相称验证后合入准备；NodeQuality 迁移及前置阶段的实机验收通过后，才能签收、正式发布或部署后续新增诊断能力。
 - 特权操作必须经过 `Privileged` trait，服务管理经过 `ServiceManager` trait；外部运行时是独立的系统服务（Linux systemd/OpenRC、macOS launchd、FreeBSD rc.d、Windows 计划任务）。

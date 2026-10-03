@@ -337,7 +337,7 @@ mod tests {
         Ok(sqlx::query_scalar("INSERT INTO singbox_subscription_sources(name,kind,secret_content,created_at) VALUES('fixture','inline','http://proxy.example.com:443',0) RETURNING id").fetch_one(pool).await?)
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn successful_fetch_metadata_updates_atomically_and_failure_retains_cache(
         pool: PgPool,
     ) -> Result<()> {
@@ -394,7 +394,7 @@ mod tests {
         Ok(())
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn concurrent_refreshes_share_one_job_and_global_claims_are_bounded(
         pool: PgPool,
     ) -> Result<()> {
@@ -417,7 +417,7 @@ mod tests {
         Ok(())
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn stale_cancelled_and_archived_jobs_never_commit_downloaded_content(
         pool: PgPool,
     ) -> Result<()> {
@@ -472,7 +472,7 @@ mod tests {
         Ok(())
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn conditional_refreshes_bind_validators_to_successful_content_and_settings(
         pool: PgPool,
     ) -> Result<()> {
@@ -551,7 +551,7 @@ mod tests {
         Ok(())
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn a_parser_upgrade_supersedes_old_jobs_without_reusing_their_work(
         pool: PgPool,
     ) -> Result<()> {
@@ -580,7 +580,7 @@ mod tests {
         Ok(())
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrations = "../../../crates/panel/migrations")]
     async fn a_parser_upgrade_requires_new_content_and_preserves_immutable_history(
         pool: PgPool,
     ) -> Result<()> {

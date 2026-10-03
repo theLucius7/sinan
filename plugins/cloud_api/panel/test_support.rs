@@ -11,7 +11,7 @@ use std::{
 };
 use tokio::{net::TcpListener, task::JoinHandle};
 
-pub(crate) struct Reply {
+pub struct Reply {
     pub action: String,
     pub value: Value,
     pub status: u16,
@@ -26,7 +26,7 @@ impl Reply {
     }
 }
 #[derive(Clone)]
-pub(crate) struct RequestData {
+pub struct RequestData {
     pub action: String,
     pub headers: HeaderMap,
     pub body: Value,
@@ -36,7 +36,7 @@ struct Data {
     replies: VecDeque<Reply>,
     requests: Vec<RequestData>,
 }
-pub(crate) struct Mock {
+pub struct Mock {
     pub endpoint: String,
     data: Arc<Mutex<Data>>,
     task: JoinHandle<()>,

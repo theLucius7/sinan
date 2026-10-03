@@ -1,7 +1,7 @@
 use super::super::super::notices;
 use super::*;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn active_power_job_does_not_roll_back_fresh_billing_or_queue_bandwidth_changes(
     pool: PgPool,
 ) {
@@ -39,7 +39,7 @@ async fn active_power_job_does_not_roll_back_fresh_billing_or_queue_bandwidth_ch
     mock.exhausted();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let day = 20000 * 86400 - 8 * 3600;
@@ -84,7 +84,7 @@ async fn delayed_scheduled_stop_is_revoked_when_the_next_running_window_begins(p
 }
 use crate::settings::Settings;
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let now = sinan_protocol::now_timestamp();
@@ -115,7 +115,7 @@ async fn new_threshold_cancels_queued_start_before_any_write(pool: PgPool) {
     assert_eq!(jobs::load(&pool, id).await.unwrap().status, "cancelled");
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn schedule_restart_deduplicates_completed_events_and_does_not_replay_old_days(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let mut p = policy();
@@ -158,7 +158,7 @@ async fn schedule_restart_deduplicates_completed_events_and_does_not_replay_old_
             .unwrap();
     assert_eq!(action, "stop");
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn cloud_identity_is_checked_and_prepaid_economical_stop_is_rejected(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let mut tx = lock(&pool, a).await.unwrap();
@@ -185,7 +185,7 @@ async fn cloud_identity_is_checked_and_prepaid_economical_stop_is_rejected(pool:
     );
     s.validate("stop", "KeepCharging").unwrap();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn cloud_notices_deduplicate_and_retry_without_real_delivery(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let now = sinan_protocol::now_timestamp();

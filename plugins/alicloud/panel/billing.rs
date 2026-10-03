@@ -1,5 +1,5 @@
 use super::model::Account;
-use crate::plugins::cloud_api::{Failure, aliyun::Aliyun, signing};
+use crate::cloud_api::{Failure, aliyun::Aliyun, signing};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::plugins::cloud_api::aliyun::Aliyun;
+use crate::cloud_api::aliyun::Aliyun;
 
 pub(super) struct AliDns(Aliyun);
 impl AliDns {

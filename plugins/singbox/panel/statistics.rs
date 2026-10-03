@@ -1,4 +1,4 @@
-use crate::{AppState, auth, error::ApiResult, statistics::StatisticsQuery};
+use crate::{AppState, auth, error::ApiResult};
 use axum::{
     Json,
     extract::{Query, State},
@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::{Value, json};
+use sinan_panel_host::statistics::StatisticsQuery;
 use sqlx::{FromRow, Row};
 
 // Whole days before today read the per-day rollup (ADR 0077); today stays exact

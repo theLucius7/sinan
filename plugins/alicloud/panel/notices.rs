@@ -28,7 +28,7 @@ pub(super) async fn record(
         return Ok(());
     };
     let settings: Settings = serde_json::from_value(value).map_err(anyhow::Error::from)?;
-    let time = crate::plugins::cloud_api::signing::iso_time(now);
+    let time = crate::cloud_api::signing::iso_time(now);
     let event_id = format!("alicloud:{id}");
     let message = webhook::Message {
         title,

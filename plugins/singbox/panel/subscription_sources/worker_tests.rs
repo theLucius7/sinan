@@ -1,5 +1,5 @@
 use super::*;
-use crate::{config::Config, plugins::singbox::subscription_parser::parse_subscription};
+use crate::{config::Config, subscription_parser::parse_subscription};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 
@@ -70,7 +70,7 @@ async fn success(state: &AppState) -> (i64, Uuid) {
     (source, revision)
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn late_parse_results_cannot_cross_settings_epoch_archive_or_cancel(pool: PgPool) {
     let state = state(pool).await;
     for change in ["settings", "epoch", "archive", "cancel"] {
@@ -142,7 +142,7 @@ async fn late_parse_results_cannot_cross_settings_epoch_archive_or_cancel(pool: 
     }
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn source_failure_categories_preserve_last_success_and_immutable_credentials(pool: PgPool) {
     let state = state(pool).await;
     let (source, previous) = success(&state).await;
@@ -170,7 +170,7 @@ async fn source_failure_categories_preserve_last_success_and_immutable_credentia
     }
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn conditional_304_reuses_only_matching_epoch_and_does_not_create_new_versions(pool: PgPool) {
     let state = state(pool).await;
     let (source, previous) = success(&state).await;
@@ -223,7 +223,7 @@ async fn conditional_304_reuses_only_matching_epoch_and_does_not_create_new_vers
     assert_eq!(error["kind"], "unexpected_304");
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn active_source_slots_renew_through_cancelling_and_release_only_on_terminal_ack(
     pool: PgPool,
 ) {
@@ -285,7 +285,7 @@ async fn active_source_slots_renew_through_cancelling_and_release_only_on_termin
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn restart_expired_claim_and_monotonic_deadline_fence_old_success(pool: PgPool) {
     let state = state(pool).await;
     let (source, previous) = success(&state).await;

@@ -2,7 +2,7 @@ use super::{
     billing,
     model::{Account, Resource, Snapshot, Target},
 };
-use crate::plugins::cloud_api::{Failure, aliyun::Aliyun};
+use crate::cloud_api::{Failure, aliyun::Aliyun};
 use serde_json::{Value, json};
 use uuid::Uuid;
 

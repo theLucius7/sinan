@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+//! Alibaba Cloud plugin: CDT traffic, ECS power, billing and cost tracking.
+
 mod api;
 mod billing;
 mod client;
@@ -12,6 +15,9 @@ mod worker;
 
 pub use api::routes;
 pub use worker::run;
+
+pub(crate) use sinan_cloud_api as cloud_api;
+pub(crate) use sinan_panel_host::{AppState, auth, error, notifications, settings};
 
 use crate::error::{ApiError, ApiResult};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -42,6 +48,6 @@ async fn resource(pool: &PgPool, id: Uuid) -> ApiResult<model::Resource> {
         .ok_or(ApiError::NotFound)
 }
 
-fn failure(error: crate::plugins::cloud_api::Failure) -> ApiError {
+fn failure(error: crate::cloud_api::Failure) -> ApiError {
     ApiError::Conflict(format!("云接口未完成操作：{}", model::message(error.code)))
 }

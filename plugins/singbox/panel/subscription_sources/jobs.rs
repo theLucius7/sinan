@@ -2,7 +2,7 @@ use super::{models::*, service};
 use crate::{
     AppState, auth,
     error::{ApiError, ApiResult},
-    plugins::singbox::subscription_parser::PARSER_VERSION,
+    subscription_parser::PARSER_VERSION,
 };
 use axum::{
     Json,

@@ -5,8 +5,8 @@ use super::{
     model::{Account, Resource},
 };
 use crate::{
+    cloud_api::{Failure, aliyun::Aliyun},
     error::ApiResult,
-    plugins::cloud_api::{Failure, aliyun::Aliyun},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

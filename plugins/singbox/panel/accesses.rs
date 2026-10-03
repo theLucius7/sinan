@@ -1,8 +1,8 @@
 use crate::{
     AppState,
     auth::require_admin,
+    business,
     error::{ApiError, ApiResult},
-    plugins::singbox::business,
 };
 use axum::{
     Json,

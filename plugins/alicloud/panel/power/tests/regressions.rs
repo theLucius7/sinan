@@ -29,7 +29,7 @@ async fn bandwidth_preview(pool: &PgPool, a: Uuid, r: Uuid) -> Uuid {
     id
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let mut p = policy();
@@ -81,7 +81,7 @@ async fn keepalive_rejection_cools_down_from_response_not_old_creation(pool: PgP
     mock.exhausted();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_preview(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     let p = policy();
@@ -131,7 +131,7 @@ async fn dismissing_unknown_bandwidth_pauses_both_automations_and_old_power_prev
     assert_eq!(count, 1);
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn resume_requires_current_revision_and_revokes_prior_previews(pool: PgPool) {
     let (a, r) = seed(&pool).await;
     sqlx::query("UPDATE alicloud_resources SET manual_hold=true WHERE id=$1")

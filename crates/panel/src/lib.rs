@@ -1,44 +1,25 @@
 #![forbid(unsafe_code)]
+//! Panel assembly: the host crate plus the compiled business plugins.
+//!
+//! Host modules and the plugin paths are re-exported so the public Rust API
+//! (`sinan_panel::auth`, `sinan_panel::plugins::singbox`, ...) stays unchanged.
 
-pub mod agent_api;
-pub mod agent_updates;
-pub mod artifacts;
-pub mod auth;
-pub mod commands;
-pub mod config;
-pub mod dashboard;
-pub mod diagnostic_plugins;
-pub mod diagnostics;
-pub mod error;
-pub mod exchange;
-pub mod frontend;
-pub mod installation;
-pub mod ip_quality;
-pub mod latency_tasks;
-pub mod maintenance;
-pub mod notifications;
-pub mod passkeys;
+pub use sinan_panel_host::{
+    AgentConnection, AppState, agent_api, agent_updates, artifacts, auth, commands, config,
+    dashboard, diagnostic_plugins, diagnostics, error, exchange, frontend, installation,
+    ip_quality, latency_tasks, maintenance, notifications, passkeys, plugin_api, probes, releases,
+    retirement, runtime_control, runtime_operations, runtime_validations, server_assets,
+    server_traffic, servers, settings, statistics, telemetry, traffic_correction,
+};
+
 pub mod plugins;
-pub mod probes;
-pub mod settings;
-pub mod statistics;
-pub mod traffic_correction;
+pub mod publisher;
+
 // Compatibility exports preserve the public Rust embedding API.
 pub use plugins::singbox::proxy_users as users;
 pub use plugins::singbox::{accesses, business, deployments, nodes, subscriptions, usage};
-pub mod publisher;
-pub mod releases;
-pub mod retirement;
-pub mod runtime_control;
-pub mod runtime_operations;
-pub mod runtime_validations;
-pub mod server_assets;
-pub mod server_traffic;
-pub mod servers;
-pub mod telemetry;
 
-mod routes;
-mod state;
-
-pub use routes::router;
-pub use state::{AgentConnection, AppState};
+/// Builds the panel router with every compiled plugin registered.
+pub fn router(state: AppState) -> axum::Router {
+    sinan_panel_host::router(state, plugins::router())
+}

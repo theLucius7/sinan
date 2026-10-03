@@ -4,7 +4,7 @@ use super::{
     model::{Account, Target},
     operations, worker,
 };
-use crate::plugins::cloud_api::test_support::{Mock, Reply};
+use crate::cloud_api::test_support::{Mock, Reply};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -60,7 +60,7 @@ async fn due(pool: &PgPool, id: Uuid) {
         .unwrap();
 }
 
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn ecs_preview_is_read_only_confirmation_is_idempotent_and_change_is_verified(pool: PgPool) {
     let (_, id) = seed(&pool, "ecs").await;
     let mock = Mock::start(vec![
@@ -111,7 +111,7 @@ async fn ecs_preview_is_read_only_confirmation_is_idempotent_and_change_is_verif
     assert_eq!(requests.len(), 4);
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn eip_adjusts_bandwidth_only_and_refuses_charge_conversion_and_shared_packages(
     pool: PgPool,
 ) {
@@ -170,7 +170,7 @@ async fn eip_adjusts_bandwidth_only_and_refuses_charge_conversion_and_shared_pac
     );
     mock.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn uncertain_write_survives_restart_and_never_replays_eip_mutation(pool: PgPool) {
     let (_, id) = seed(&pool, "eip").await;
     let mock = Mock::start(vec![
@@ -212,7 +212,7 @@ async fn uncertain_write_survives_restart_and_never_replays_eip_mutation(pool: P
     );
     restored.exhausted();
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn committed_intent_and_external_drift_are_never_blindly_reapplied(pool: PgPool) {
     let (_, id) = seed(&pool, "ecs").await;
     let mock = Mock::start(vec![snapshot("ecs", 10), snapshot("ecs", 20)]).await;
@@ -264,7 +264,7 @@ async fn committed_intent_and_external_drift_are_never_blindly_reapplied(pool: P
         "dismissed"
     );
 }
-#[sqlx::test]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn cancelled_or_revised_policy_does_not_reach_the_cloud(pool: PgPool) {
     let (account_id, id) = seed(&pool, "ecs").await;
     let mock = Mock::start(vec![snapshot("ecs", 10), snapshot("ecs", 10)]).await;

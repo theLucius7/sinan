@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/protocol", "crates/compiler", "crates/panel", "crates/agent", "crates/agent-core", "crates/adapter-sdk", "crates/adapter-singbox", "crates/adapter-nodequality", "crates/tcp-probe", "crates/adapter-tcpquality", "crates/adapter-ipquality"]
+members = ["crates/protocol", "crates/compiler", "crates/panel", "crates/panel-host", "crates/agent", "crates/agent-core", "crates/adapter-sdk", "crates/adapter-singbox", "crates/adapter-nodequality", "crates/tcp-probe", "crates/adapter-tcpquality", "crates/adapter-ipquality", "plugins/singbox/panel", "plugins/ddns/panel", "plugins/alicloud/panel", "plugins/cloud_api/panel"]
 resolver = "3"
 
 [workspace.package]
@@ -17,6 +17,11 @@ sinan-adapter-singbox = { path = "crates/adapter-singbox" }
 sinan-adapter-nodequality = { path = "crates/adapter-nodequality" }
 sinan-adapter-tcpquality = { path = "crates/adapter-tcpquality" }
 sinan-adapter-ipquality = { path = "crates/adapter-ipquality" }
+sinan-panel-host = { path = "crates/panel-host" }
+sinan-cloud-api = { path = "plugins/cloud_api/panel" }
+sinan-plugin-singbox = { path = "plugins/singbox/panel" }
+sinan-plugin-ddns = { path = "plugins/ddns/panel" }
+sinan-plugin-alicloud = { path = "plugins/alicloud/panel" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

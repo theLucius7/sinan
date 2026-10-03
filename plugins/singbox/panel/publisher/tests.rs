@@ -3,7 +3,7 @@ use crate::config::Config;
 use anyhow::Result;
 use sqlx::PgPool;
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn capability_and_its_preserved_old_flag_cannot_create_a_deployment(
     pool: PgPool,
 ) -> Result<()> {
@@ -66,7 +66,7 @@ async fn capability_and_its_preserved_old_flag_cannot_create_a_deployment(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
     pool: PgPool,
 ) -> anyhow::Result<()> {
@@ -129,7 +129,7 @@ async fn stale_candidate_cannot_publish_after_enablement_is_withdrawn(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn shared_controller_rotation_is_transactional_and_never_rewrites_old_deployment_bytes(
     pool: PgPool,
 ) -> Result<()> {

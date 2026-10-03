@@ -19,7 +19,7 @@ async fn legacy(tx: &mut Transaction<'_, Postgres>, entry: i64, exit: i64) -> Re
     Ok(id)
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn newly_created_legacy_chain_preserves_both_snapshot_namespaces_and_disabled_projection(
     pool: PgPool,
 ) -> Result<()> {
@@ -64,7 +64,7 @@ async fn newly_created_legacy_chain_preserves_both_snapshot_namespaces_and_disab
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn node_deletion_guard_retains_policy_numeric_and_ordered_cleanup_owners(
     pool: PgPool,
 ) -> Result<()> {
@@ -120,7 +120,7 @@ async fn node_deletion_guard_retains_policy_numeric_and_ordered_cleanup_owners(
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn numeric_retained_hop_deletion_returns_its_public_owner_without_reading_snapshots(
     pool: PgPool,
 ) -> Result<()> {
@@ -170,7 +170,7 @@ async fn numeric_retained_hop_deletion_returns_its_public_owner_without_reading_
     Ok(())
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrations = "../../../crates/panel/migrations")]
 async fn ordered_deletion_projection_tracks_selected_generations_and_corruption_fallback(
     pool: PgPool,
 ) -> Result<()> {
