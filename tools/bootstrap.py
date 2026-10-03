@@ -229,6 +229,47 @@ def compatible_targets(actual, requested="auto"):
     return targets
 
 
+def catalog_refusal(error, deadline):
+    """Report known selection failures without reflecting a panel URL or free-form body."""
+    if error.code == 401:
+        error.close()
+        return "接入令牌无效或已过期，请重新签发令牌"
+    fallback = "无法获取接入版本，请检查令牌是否有效以及面板是否已导入签名 Release"
+    if error.code != 409:
+        error.close()
+        return fallback
+    try:
+        with error:
+            blocks, total = [], 0
+            while total <= 8192:
+                block = bounded_read(error, min(4096, 8193 - total), deadline,
+                                     "panel catalog refusal exceeded total time budget")
+                if not block:
+                    break
+                blocks.append(block)
+                total += len(block)
+            if total > 8192:
+                return fallback
+        value = json.loads(b"".join(blocks))
+        message = value.get("error") if isinstance(value, dict) else None
+    except (OSError, ValueError, RecursionError):
+        return fallback
+    known = {
+        "所选 Agent 版本尚未导入已校验的签名 Release": "所选 Agent 版本尚未导入已校验的签名 Release",
+        "所选 Agent 版本与当前面板协议不兼容，请选择兼容的已签名版本":
+            "所选 Agent 版本与当前面板协议不兼容，请选择兼容的已签名版本",
+        "所选 Agent 版本不包含该平台可安装的制品，请核对平台、架构及稳定版本要求":
+            "所选 Agent 版本不包含本机平台可安装的制品，请核对平台、架构及稳定版本要求",
+        "请先导入对应平台且协议兼容的已签名 Agent Release":
+            "面板尚无本机平台且协议兼容的已签名 Agent Release，请先导入 Release",
+    }
+    if isinstance(message, str) and message.startswith("历史 Agent 不支持当前标准安装与服务合同"):
+        return "历史 Agent 不支持当前标准安装与服务合同；补签不能补齐旧命令，请选择 0.3.0 或更新的兼容已签版本"
+    if isinstance(message, str) and message.startswith("所选历史 Agent 不支持当前标准安装与服务合同"):
+        return "历史 Agent 不支持当前标准安装与服务合同；补签不能补齐旧命令，请选择 0.3.0 或更新的兼容已签版本"
+    return known.get(message, fallback) if isinstance(message, str) else fallback
+
+
 def catalog(panel, token, target, version):
     validate_panel_origin(panel)
     parameters = {"token": token, "target": target}
@@ -250,7 +291,7 @@ def catalog(panel, token, target, version):
                 blocks.append(block)
             encoded = b"".join(blocks)
     except urllib.error.HTTPError as error:
-        raise ValueError("无法获取接入版本，请检查令牌是否有效以及面板是否已导入签名 Release") from error
+        raise ValueError(catalog_refusal(error, deadline)) from None
     ensure(0 < len(encoded) <= 131072, "接入版本目录超出大小限制")
     value = json.loads(encoded)
     ensure(isinstance(value, dict) and isinstance(value.get("versions"), list)

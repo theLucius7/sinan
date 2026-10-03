@@ -149,8 +149,8 @@ fi
 @@BOOTSTRAP_FILES@@
 
 if [ "$PLATFORM" = Linux ] && ! command -v minisign >/dev/null; then
-  MINISIGN=$("$PYTHON" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import bootstrap; print(bootstrap.prepare_linux_minisign(sys.argv[1]))' "$STAGING")
+  MINISIGN=$("$PYTHON" -I -c 'import sys; sys.path.insert(0, sys.argv[1]+"/tools"); import bootstrap; print(bootstrap.prepare_linux_minisign(sys.argv[1]))' "$STAGING")
 fi
 
 # Isolated mode ignores Python environment/path overrides; imports use only this bundle.
-"$PYTHON" -I -c 'import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); runpy.run_module("bootstrap", run_name="__main__")' "$STAGING" "$@" --trusted-keys "$STAGING/public-keys.json" --minisign "$(command -v "$MINISIGN")"
+"$PYTHON" -I -c 'import runpy, sys; sys.path.insert(0, sys.argv.pop(1)+"/tools"); runpy.run_module("bootstrap", run_name="__main__")' "$STAGING" "$@" --trusted-keys "$STAGING/public-keys.json" --minisign "$(command -v "$MINISIGN")"

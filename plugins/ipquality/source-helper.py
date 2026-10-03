@@ -29,6 +29,8 @@ POLICIES = {
     'netflix': 'b928c6d4ac92b26f72207914d269b5154f09441bad3ca9eb5f036654f20f5eb7',
     'openai': '1def74828e5414ad41f184f45e821fb686ed9898b3ed665663acc978ed191928',
 }
+REVIEWED_POLICY_FILES = {'browser': 'native-browser-policy.py',
+                         'netflix': 'native-netflix-policy.py'}
 
 
 def require(condition, message):
@@ -92,11 +94,13 @@ def policy_bytes():
     directory = here / 'policies'
     # Developer builds may reuse the reviewed helpers. The source offer carries
     # independent exact copies under policies/; the runtime script imports none.
-    if not directory.is_dir():
+    source_offer = directory.is_dir()
+    if not source_offer:
         directory = here.parent / 'nodequality'
     result = {}
     for name, digest in POLICIES.items():
-        content = ordinary(directory / (name + '-policy.py'), 65536)
+        filename = name + '-policy.py' if source_offer else REVIEWED_POLICY_FILES.get(name, name + '-policy.py')
+        content = ordinary(directory / filename, 65536)
         require(hashlib.sha256(content).hexdigest() == digest, 'reviewed policy helper identity mismatch: ' + name)
         result[name] = content
     return result

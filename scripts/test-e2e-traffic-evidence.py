@@ -44,6 +44,10 @@ class EvidenceContracts(unittest.TestCase):
         self.assertEqual(record["error_kind"], "timeout")
         self.assertEqual(record["download_bytes"], 1103168)
         self.assertEqual(record["elapsed_ms"], 90000)
+        self.assertEqual(record["timeout_source"], "curl_deadline")
+        self.assertEqual(EVIDENCE.load(self.path)["policy"]["request_ms"], 90000)
+        self.assertEqual(EVIDENCE.load(self.path)["policy"]["target_scope"], "owned_loopback")
+        self.assertEqual(EVIDENCE.load(self.path)["policy"]["retries"], 0)
         self.assertFalse(record["curl_succeeded"])
         arguments, options = run.call_args.args[0], run.call_args.kwargs
         self.assertEqual(arguments[arguments.index("--max-time") + 1], "90")
@@ -66,6 +70,33 @@ class EvidenceContracts(unittest.TestCase):
         self.assertTrue(record["curl_succeeded"])
         self.assertNotIn("passed", record)
         self.assertNotIn(str(self.scratch), self.path.read_text())
+        self.assertNotIn("timeout_source", record)
+
+    def test_process_guard_is_distinct_from_curl_deadline_and_preserves_failure(self):
+        with patch.object(EVIDENCE.subprocess, "run", side_effect=subprocess.TimeoutExpired([SECRET], 92)), \
+             contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(EVIDENCE.transfer(self.scratch, "first-traffic", "upload"), 28)
+        record = EVIDENCE.load(self.path)["transfers"][0]
+        self.assertEqual(record["timeout_source"], "process_guard")
+        self.assertEqual(record["reached_stage"], "unknown")
+        self.assertFalse(record["curl_succeeded"])
+        self.assertEqual(EVIDENCE.load(self.path)["policy"]["process_guard_ms"], 92000)
+        self.assertNotIn(SECRET, self.path.read_text())
+
+    def test_policy_is_exact_allowlisted_and_never_inferred_for_historical_evidence(self):
+        legacy = {"transfers": [{"phase": "first-traffic", "direction": "download", "curl_exit": 28,
+                                 "error_kind": "timeout", "timeout_source": SECRET}]}
+        summary = EVIDENCE.safe_summary(legacy)
+        self.assertNotIn("policy", summary)
+        self.assertNotIn("timeout_source", summary["transfers"][0])
+        for key, replacement in (("request_ms", 15000), ("retries", False),
+                                 ("target_scope", SECRET), ("process_guard_ms", 92001)):
+            policy = dict(EVIDENCE.TRAFFIC_POLICY, **{key: replacement})
+            self.assertNotIn("policy", EVIDENCE.safe_summary({"policy": policy}))
+        policy = dict(EVIDENCE.TRAFFIC_POLICY, private_url=SECRET, token=SECRET)
+        self.assertEqual(EVIDENCE.safe_summary({"policy": policy}), {"policy": EVIDENCE.TRAFFIC_POLICY})
+        successful = dict(legacy["transfers"][0], curl_exit=0, error_kind="none", timeout_source="process_guard")
+        self.assertNotIn("timeout_source", EVIDENCE.safe_record(successful, True))
 
     def test_timeout_stage_distinguishes_observed_progress_without_claiming_root_cause(self):
         cases = (
@@ -321,8 +352,10 @@ class EvidenceContracts(unittest.TestCase):
     def test_public_ci_summary_revalidates_evidence_without_probes_or_private_dump(self):
         source = (ROOT / "scripts/ci-real-e2e.sh").read_text().split("write_summary() {\n", 1)[1]
         source = source.split("<<'PY'\n", 1)[1].split("\nPY\n}", 1)[0]
-        self.path.write_text(json.dumps({"transfers": [{"phase": "first-traffic", "direction": "download",
-                    "curl_exit": 28, "error_kind": "timeout", "download_bytes": 0, "stderr": SECRET}],
+        self.path.write_text(json.dumps({"policy": dict(EVIDENCE.TRAFFIC_POLICY, private_target=SECRET),
+                    "transfers": [{"phase": "first-traffic", "direction": "download",
+                    "curl_exit": 28, "error_kind": "timeout", "timeout_source": "curl_deadline",
+                    "download_bytes": 0, "stderr": SECRET}],
                     "failure": {"fixture_tls": {"passed": False, "error_kind": "tls", "key": SECRET}}}))
         output = self.scratch / "summary.json"
         argv = ["summary", str(self.scratch / "state.json"), str(output), "0", "first-traffic", "28", "0", "278"]
@@ -337,6 +370,8 @@ class EvidenceContracts(unittest.TestCase):
         self.assertEqual(summary["exit_code"], 28)
         self.assertEqual(summary["failure_line"], 278)
         self.assertEqual(summary["traffic"]["transfers"][0]["download_bytes"], 0)
+        self.assertEqual(summary["traffic"]["transfers"][0]["timeout_source"], "curl_deadline")
+        self.assertEqual(summary["traffic"]["policy"], EVIDENCE.TRAFFIC_POLICY)
         self.assertEqual(annotation.getvalue(), "::error title=Reality acceptance failed::"
                          + json.dumps(summary, ensure_ascii=True) + "\n")
         self.assertNotIn(SECRET, output.read_text() + annotation.getvalue())

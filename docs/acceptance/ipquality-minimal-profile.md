@@ -1,8 +1,22 @@
 # IPQuality 最小闭包贯穿验收
 
-阶段：整步实现及集中验收完成，八组有效合同共 230 项通过；独立 Debian 12 ARM64 上实际离线派生成功。尚未实际 prepare/build/export，也没有获准的 builder、可发布最小 rootfs 或节点运行签收。可机读结果见 [本步收据](ipquality-minimal-profile-local.json)，设计见 [ADR 0070](../adr/0070-ipquality-minimal-profile-chain.md)，原缺口见 [Issue #146](https://github.com/theLucius7/sinan/issues/146)。
+前次闭包验收：八组有效合同共 230 项通过；独立 Debian 12 ARM64 上实际离线派生成功。其原始结果见 [前次收据](ipquality-minimal-profile-local.json)，设计见 [ADR 0070](../adr/0070-ipquality-minimal-profile-chain.md)，原缺口见 [Issue #146](https://github.com/theLucius7/sinan/issues/146)。尚未实际 prepare/build/export，也没有获准的 builder、可发布最小 rootfs 或节点运行签收。
 
-## 本步范围
+2026-10-03 集成交付补充已完成源码冻结后的统一验证：十套 IP／工厂回归有效去重 275 项通过、2 项具名条件跳过；独立固定源 policy 再验证 30 项全部通过。原 230 项及实际派生记录只证明原源码，本次证据与历史记录分开。完整集成交付、输入身份和机器收据见 [本轮统一记录](all-open-issues-20261003.md)。
+
+静态审查发现真实归档读取器仍只允许四份旧元数据，而 IPQuality 包装及 intake 已请求第五份最小 profile；旧 fixture 隔离了读取边界，未暴露实际入口必然拒绝。现已在固定白名单中增加公开 profile，并增加只读 `var/lib/dpkg/status`，分别限制为 1 MiB 与 8 MiB。读取仍在完整 gzip／USTAR、清单和摘要核验后返回，不展开或执行内容，也不接受私有工厂文件。
+
+prepare／build 的真实派生、绑定、父缓存及离线选择重认证继续保留。新增 export 读回与制品 intake 将归档中的实际 dpkg 名称、版本、架构和 Source 身份逐项与精确闭包比较，拒绝额外包、改版、同名不同源、重复条目和未安装状态；对应源库存现在从 lock 确定性生成并逐字核对，不能仅靠重写 provenance 摘要通过。provenance 字段必须精确匹配，不能附带父路径、UID 等私有证据。真实读取器源码也进入派生及公开 proof 的实现摘要，新源码需要重新派生和绑定，旧 proof 不能继续宣称本次执行身份相同。
+
+新增回归使用真实有界小归档，贯穿六份元数据读取、export 读回和 intake，另覆盖重算归档／清单／provenance 摘要后仍然存在的实际库存差异；无第三方访问、安装或诊断执行。普通 NodeQuality 工厂默认不启用 IP 精确 Source 扩展，历史制品执行身份另按原版本保存。
+
+十套范围为 `test-ipquality-{inputs,profile,artifact,build,inputs-capacity,runner}.py` 六套及 `test-nodequality-rootfs{,-build,-capacity,-collect}.py` 四套。首轮声明 277 项，其中 273 通过、2 个通用 profile fixture 错误、2 个条件跳过。集中修复 fixture 后，仅补验受影响 rootfs-build 40 项，全部通过，其余已通过九套没有重跑。修复保留完整包与 Source 身份，并使 profile 导出回调核对实际归档、proof、库存及摘要，同时覆盖拒绝传播；原失败收据保持。
+
+两项未执行的场景为 `OwnedLoopFilesystemTests.test_real_filesystem_free_disk_guard_stops_owned_producer` 和 `OwnedLoopFilesystemTests.test_real_filesystem_free_inode_guard_stops_owned_producer`，均因未启用 `SINAN_FACTORY_LOOP_FIXTURE=1` 跳过，不计为通过。十套最终有效结果为 275 通过、0 未解决失败／错误、2 条件跳过。
+
+随后静态闭包复核修复 IP helper 的 browser／netflix 回退文件名：固定摘要对应 `native-browser-policy.py` 与 `native-netflix-policy.py`，仍使用原固定摘要；公开 `policies/` 副本保持独立角色文件名。该补充冻结后，`plugins/ipquality/test-policy.py` 使用实际固定四角色源缓存执行 30 项，全部通过且无跳过，覆盖完整源码派生、Bash 语法、上游 serializer 及三个回退／篡改回归；它不是第三方查询或实际最小 rootfs 构建证明。
+
+## 前次闭包验收范围
 
 最小包／源闭包不能只在 derive 时检查。IPQuality prepare 重新认证派生父链、真实缓存和绑定，再重放固定 profile 的离线选择；prepare、build、export 与制品校验绑定同一份公开证明。私有路径和文件身份只保存在准备上下文，公开证明不能泄露原节点细节。共用 NodeQuality 默认路径不启用这些扩展。
 
@@ -23,7 +37,7 @@ IPQuality 准备入口现在必须明确给出 `--lock <绑定目录/inputs-lock
 
 集中范围为共用工厂、工厂容量、收集器、IP 输入容量、派生、最小 profile、IP 制品及 IP 包装八组。原容量套件的两个 600 MiB loop 文件系统实机场景在冻结计划中明确排除：本步没有改其容量算法和默认 NodeQuality 路径，仅加 IP 专用扩展，保留旧场景与历史证据，不冒称本次重演。实际加载仍核对完整声明的方法清单，只有这两个具名场景不执行，不能把意外跳过算通过；本步的小内存单元与实际隔离派生另存证据。
 
-## 集中合同结果
+## 前次集中合同结果
 
 | 有效范围 | 通过 | 跳过／失败／错误 | 使用的轮次 |
 | --- | ---: | --- | --- |

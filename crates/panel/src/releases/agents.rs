@@ -6,6 +6,8 @@ use axum::{
 };
 use serde::Serialize;
 
+const MINIMUM_INSTALLATION_VERSION: (u64, u64, u64) = (0, 3, 0);
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AgentVersion {
     pub version: String,
@@ -18,7 +20,29 @@ pub struct AgentVersion {
 
 #[derive(Serialize)]
 pub struct AgentVersions {
+    pub policy: AgentInstallationPolicy,
     pub versions: Vec<AgentVersion>,
+}
+
+#[derive(Serialize)]
+pub struct AgentInstallationPolicy {
+    pub default_version: &'static str,
+    pub selection: &'static str,
+    pub minimum_version: String,
+}
+
+impl AgentVersions {
+    fn new(versions: Vec<AgentVersion>) -> Self {
+        let (major, minor, patch) = MINIMUM_INSTALLATION_VERSION;
+        Self {
+            policy: AgentInstallationPolicy {
+                default_version: "latest",
+                selection: "highest_stable_signed_protocol_compatible_for_target",
+                minimum_version: format!("{major}.{minor}.{patch}"),
+            },
+            versions,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -93,7 +117,8 @@ fn valid_agent(release: &StoredRelease, artifact: &VerifiedArtifact) -> bool {
         // Pre-0.3 historical binaries lack the current installation/service CLI.
         // This policy is not proof of arbitrary newer bytes: signature, payload
         // and the Agent's independent installation/cache checks still apply.
-        && version_key(&entry.version).is_some_and(|version| version >= (0, 3, 0))
+        && version_key(&entry.version)
+            .is_some_and(|version| version >= MINIMUM_INSTALLATION_VERSION)
         && (linux_target(&entry.arch) || sinan_protocol::release_version(&entry.version).is_some())
         && metadata.tag == format!("agent-v{}", entry.version)
         && metadata.protocol_min <= PROTOCOL_MAX
@@ -218,7 +243,7 @@ pub(crate) async fn selection_error(
         metadata.protocol_min > PROTOCOL_MAX || metadata.protocol_max < PROTOCOL_MIN
     }) {
         "所选 Agent 版本与当前面板协议不兼容，请选择兼容的已签名版本"
-    } else if version_key(version).is_some_and(|version| version < (0, 3, 0)) {
+    } else if version_key(version).is_some_and(|version| version < MINIMUM_INSTALLATION_VERSION) {
         "所选历史 Agent 不支持当前标准安装与服务合同：0.1/0.2 原制品缺少所需的验签、缓存预检或 supervisor；补签元数据不能补齐这些命令。历史制品与身份保留，请选择 0.3.0 或更新的兼容已签版本"
     } else {
         "所选 Agent 版本不包含该平台可安装的制品，请核对平台、架构及稳定版本要求"
@@ -257,7 +282,7 @@ pub async fn list_agent_versions(
     .await?;
     Ok((
         [(header::CACHE_CONTROL, "no-store")],
-        Json(AgentVersions { versions }),
+        Json(AgentVersions::new(versions)),
     )
         .into_response())
 }
@@ -274,9 +299,12 @@ pub async fn bootstrap_agent_versions(
         query.platform.as_deref(),
     )
     .await?;
+    if versions.is_empty() {
+        return Err(selection_error(&state, query.agent_version.as_deref()).await?);
+    }
     Ok((
         [(header::CACHE_CONTROL, "no-store")],
-        Json(AgentVersions { versions }),
+        Json(AgentVersions::new(versions)),
     )
         .into_response())
 }

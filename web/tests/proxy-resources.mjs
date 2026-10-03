@@ -256,7 +256,11 @@ try {
     assert.equal(await create.isDisabled(),true)
     await brokenRow.getByRole('button',{name:'删除',exact:true}).click();dialog=page.getByRole('dialog')
     await dialog.getByRole('button',{name:'确认删除',exact:true}).click();await dialog.waitFor({state:'hidden'})
-    await brokenRow.waitFor({state:'hidden'})
+    const deletedDeadline=Date.now()+7000
+    while (await brokenRow.count() !== 0) {
+      assert(Date.now()<deletedDeadline,'deleted chain must disappear from every resource layout')
+      await page.waitForTimeout(20)
+    }
     assert(!nodes.some(node => node.id === 3));assert(nodes.some(node => node.id === 2))
     assert.equal(writes.at(-1).path,`${prefix}/ordered-proxy-resources/chain/1`)
     nodesFailure=false;broken=false;await poll();await enabled(create)

@@ -408,7 +408,7 @@ async fn backend_without_cleanup_proof_is_rejected_before_starting() -> Result<(
 
 #[tokio::test]
 async fn corrupted_saved_target_never_reaches_status_stop_or_cleanup_operations() -> Result<()> {
-    for case in 0..9 {
+    for case in 0..10 {
         let directory = Directory::new();
         let services = Arc::new(Services::new(JobStatus::Succeeded));
         let first = worker(&directory, services.clone())?;
@@ -443,6 +443,13 @@ async fn corrupted_saved_target_never_reaches_status_stop_or_cleanup_operations(
                     service.program = spec.binary_path.clone();
                 }
                 8 => service.unit = format!("sinan-diagnostic-{}.service", Uuid::new_v4()),
+                9 => {
+                    spec.id = Uuid::nil().to_string();
+                    spec.job_dir = first.config.runtime_root.join("diagnostics").join(&spec.id);
+                    service.unit = format!("sinan-diagnostic-{}.service", spec.id);
+                    service.working_directory = spec.job_dir.clone();
+                    terminal_update.as_mut().unwrap().id = Uuid::nil();
+                }
                 _ => unreachable!(),
             }
         }

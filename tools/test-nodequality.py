@@ -22,6 +22,8 @@ from unittest import mock
 
 
 sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from nodequality_native_fixture_process import OwnedProcesses, group_has_live_members
 PLUGIN = pathlib.Path(__file__).resolve().parent.parent / "plugins/nodequality"
 FULL_START_GUARD = "[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'"
 module_spec = importlib.util.spec_from_file_location("nodequality_report", PLUGIN / "report.py")
@@ -484,14 +486,15 @@ class BuildTests(unittest.TestCase):
                                        ("@DAILY_HELPER@", (PLUGIN / "daily.py").read_text()),
                                        ("@OFFICIAL_IP_HELPER@", (PLUGIN / "official-ip.py").read_text()),
                                        ("@EXECUTION_ADMISSION@", (PLUGIN / "execution-admission.json").read_text()),
-                                       ("@CURL_SHIM@", (PLUGIN / "curl-shim.sh").read_text()),
+                                       ("@CURL_SHIM@", (PLUGIN / "runtime-curl.sh").read_text()),
                                        ("@CHROOT_SHIM@", (PLUGIN / "chroot-shim.sh").read_text())):
                     runner = runner.replace(marker, source)
                 executable = root / "nodequality"
                 executable.write_text(runner)
-                result = subprocess.run(["bash", str(executable), "--workspace", str(workspace), "--ip-version", "ipv4"],
-                                        env=dict(os.environ, PATH=str(binaries) + ":" + os.environ["PATH"]),
-                                        capture_output=True, text=True, timeout=15)
+                owned = OwnedProcesses(root)
+                result = owned.run(["bash", str(executable), "--workspace", str(workspace), "--ip-version", "ipv4"],
+                                   env=dict(os.environ, PATH=str(binaries) + ":" + os.environ["PATH"]),
+                                   capture_output=True, text=True, timeout=15)
                 self.assertEqual((workspace / "upstream-exit.txt").read_text().strip(), str(exit_code),
                                  (result.stdout, result.stderr, (workspace / "log.txt").read_text()))
                 self.assertEqual((workspace / "report.zip").read_bytes(), archive)
@@ -501,7 +504,7 @@ class BuildTests(unittest.TestCase):
 
     def test_repeated_build_refuses_to_modify_the_existing_artifact_and_checksum(self):
         with tempfile.TemporaryDirectory() as directory:
-            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19"
+            version = "a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22"
             root = pathlib.Path(directory) / "nodequality" / version
             root.mkdir(parents=True)
             artifact = root / "amd64"
@@ -579,11 +582,11 @@ class BuildTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
 
     def test_shell_syntax_and_nonexecuting_help(self):
-        for script in (PLUGIN / "runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "chroot-shim.sh", PLUGIN.parents[1] / "tools/build-nodequality.sh"):
+        for script in (PLUGIN / "runner.sh.tmpl", PLUGIN / "exit-observer.sh", PLUGIN / "curl-shim.sh", PLUGIN / "runtime-curl.sh", PLUGIN / "chroot-shim.sh", PLUGIN.parents[1] / "tools/build-nodequality.sh"):
             subprocess.run(["bash", "-n", str(script)], check=True)
         result = subprocess.run(["bash", str(PLUGIN / "runner.sh.tmpl"), "--version"],
                                 capture_output=True, text=True, check=True)
-        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-r19")
+        self.assertEqual(result.stdout.strip(), "nodequality a92fca6c0067df29ddd03fdc2fee6f3000f64545-r22")
 
     def test_existing_architecture_checksums_are_not_replaced(self):
         script = (PLUGIN.parents[1] / "tools/build-nodequality.sh").read_text()
@@ -619,6 +622,8 @@ class RunnerFixtureTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="sinan-nodequality-runner-fixture-")
         self.root = pathlib.Path(self.temporary.name)
+        self.processes = OwnedProcesses(self.root)
+        self.addCleanup(self.processes.cleanup_temporary, self.temporary, self)
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
         self.binary = self.root / "bin"
@@ -643,9 +648,6 @@ raise SystemExit(int(os.environ.get("NQ_FIXTURE_CURL_EXIT", "0")))
             "NQ_FIXTURE_RESPONSE": "测试完成：https://nodequality.com/r/fixture_REPORT-123\n",
             "NQ_FIXTURE_STATUS": "200",
         })
-
-    def tearDown(self):
-        self.temporary.cleanup()
 
     def stub(self, name, source):
         target = self.binary / name
@@ -723,7 +725,7 @@ work_dir=$workspace/.nodequalityfixture
             ("DAILY_HELPER", (PLUGIN / "daily.py").read_text()),
             ("OFFICIAL_IP_HELPER", (PLUGIN / "official-ip.py").read_text()),
             ("EXECUTION_ADMISSION", (PLUGIN / "execution-admission.json").read_text()),
-            ("CURL_SHIM", (PLUGIN / "curl-shim.sh").read_text()),
+            ("CURL_SHIM", (PLUGIN / "runtime-curl.sh").read_text()),
             ("CHROOT_SHIM", (PLUGIN / "chroot-shim.sh").read_text()),
         ):
             content = content.replace("@" + marker + "@\n", payload)
@@ -734,7 +736,7 @@ work_dir=$workspace/.nodequalityfixture
                 "--ip-version", "ipv6", "--network-mode", "low"]
 
     def assert_complete_runner_report(self, mode, upstream_status, status):
-        result = subprocess.run(self.runner(mode) + ["--mode", "full"], env=self.environment, capture_output=True, timeout=10)
+        result = self.processes.run(self.runner(mode) + ["--mode", "full"], env=self.environment, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, status, result.stderr.decode())
         self.assertEqual((self.workspace / "upstream-exit.txt").read_text().strip(), str(upstream_status))
         self.assertEqual((self.workspace / "fixture-options.txt").read_text().strip(), "y/y/l/y/-6")
@@ -760,7 +762,7 @@ work_dir=$workspace/.nodequalityfixture
                     path.unlink()
 
     def test_explicit_upload_true_produces_the_online_report(self):
-        result = subprocess.run(self.runner() + ["--upload-report", "true"], env=self.environment,
+        result = self.processes.run(self.runner() + ["--upload-report", "true"], env=self.environment,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual((self.workspace / "report-url.txt").read_text().strip(),
@@ -770,7 +772,7 @@ work_dir=$workspace/.nodequalityfixture
     def test_upload_403_preserves_a_complete_local_report(self):
         self.environment.update(NQ_FIXTURE_STATUS="403", NQ_FIXTURE_RESPONSE="Access denied",
                                 NQ_FIXTURE_CURL_EXIT="22")
-        result = subprocess.run(self.runner() + ["--upload-report", "true"], env=self.environment,
+        result = self.processes.run(self.runner() + ["--upload-report", "true"], env=self.environment,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertIn("HTTP 状态：403", (self.workspace / "result.txt").read_text())
@@ -780,7 +782,7 @@ work_dir=$workspace/.nodequalityfixture
     def test_upload_transport_failure_is_separate_from_upstream_execution_failure(self):
         self.environment.update(NQ_FIXTURE_STATUS="000", NQ_FIXTURE_RESPONSE="Fixture connection failed",
                                 NQ_FIXTURE_CURL_EXIT="7")
-        result = subprocess.run(self.runner() + ["--upload-report", "true"], env=self.environment,
+        result = self.processes.run(self.runner() + ["--upload-report", "true"], env=self.environment,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual((self.workspace / "upstream-exit.txt").read_text().strip(), "1")
@@ -793,7 +795,7 @@ work_dir=$workspace/.nodequalityfixture
         for mode, status in (("early-one", 1), ("failed", 7)):
             with self.subTest(mode=mode):
                 try:
-                    result = subprocess.run(self.runner(mode), env=self.environment, capture_output=True, timeout=10)
+                    result = self.processes.run(self.runner(mode), env=self.environment, capture_output=True, timeout=10)
                     self.assertEqual(result.returncode, status, result.stderr.decode())
                     self.assertEqual((self.workspace / "upstream-exit.txt").read_text().strip(), str(status))
                     self.assertTrue((self.workspace / "result.txt").is_file())
@@ -804,14 +806,14 @@ work_dir=$workspace/.nodequalityfixture
                         path.unlink()
 
     def test_signal_cleanup_cannot_prove_normal_completion(self):
-        result = subprocess.run(self.runner("signal-cleanup"), env=self.environment,
+        result = self.processes.run(self.runner("signal-cleanup"), env=self.environment,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1, result.stderr.decode())
         self.assertTrue((self.workspace / "result.txt").is_file())
         self.assertEqual((self.workspace / "report.zip").read_bytes(), self.fixture_archive)
 
     def test_cleanup_refusal_cannot_prove_normal_completion(self):
-        result = subprocess.run(self.runner("cleanup-refused"), env=self.environment,
+        result = self.processes.run(self.runner("cleanup-refused"), env=self.environment,
                                 capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1, result.stderr.decode())
         self.assertTrue((self.workspace / "result.txt").is_file())
@@ -820,7 +822,7 @@ work_dir=$workspace/.nodequalityfixture
     def test_zero_exit_or_normal_cleanup_without_a_zip_is_failed(self):
         for mode in ("empty", "missing-reports"):
             with self.subTest(mode=mode):
-                result = subprocess.run(self.runner(mode), env=self.environment, capture_output=True, timeout=10)
+                result = self.processes.run(self.runner(mode), env=self.environment, capture_output=True, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.workspace / "result.txt").exists())
                 self.assertIn(b"a complete local NodeQuality report was not produced", result.stderr)
@@ -830,7 +832,7 @@ work_dir=$workspace/.nodequalityfixture
     def test_daily_branch_never_runs_upstream_or_creates_mounts(self):
         targets = self.workspace / "daily-targets.json"
         targets.write_text("[]")
-        result = subprocess.run(self.runner("sleep") + ["--mode", "daily", "--targets-file", str(targets)],
+        result = self.processes.run(self.runner("sleep") + ["--mode", "daily", "--targets-file", str(targets)],
                                 env=self.environment, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.workspace / "section-net_quality.json").exists())
@@ -842,25 +844,111 @@ work_dir=$workspace/.nodequalityfixture
         self.assertFalse((self.root / "cleanup.txt").exists())
 
     def test_signal_cleans_only_the_private_workspace(self):
-        process = subprocess.Popen(self.runner("sleep"), env=self.environment,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        child = self.processes.spawn(self.runner("sleep"), env=self.environment)
+        process = child.process
         try:
             deadline = time.monotonic() + 5
             while not (self.workspace / "fixture-ready").exists() and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertTrue((self.workspace / "fixture-ready").exists())
             os.killpg(process.pid, signal.SIGTERM)
-            process.communicate(timeout=5)
+            child.collect(timeout=5)
         finally:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.communicate(timeout=5)
+            self.processes.stop(child)
         self.assertNotEqual(process.returncode, 0)
         self.assertFalse((self.workspace / ".nodequalityfixture").exists())
         self.assertFalse((self.workspace / ".runner.lock").exists())
         cleanup = (self.root / "cleanup.txt").read_text().splitlines()
         self.assertEqual(len(cleanup), 3)
         self.assertTrue(all(str(self.workspace) in call for call in cleanup))
+
+    def test_fixture_timeout_confirms_owned_descendants_and_keeps_external_sentinel_alive(self):
+        sentinel = self.processes.spawn([sys.executable, "-B", "-c", "import time;time.sleep(30)"])
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.processes.run(self.runner("sleep"), env=self.environment, timeout=2)
+            wrapper = self.processes.children[-1]
+            self.assertTrue(wrapper.cleanup_confirmed)
+            self.assertFalse(group_has_live_members(wrapper.pid))
+            self.assertIsNone(sentinel.process.poll())
+        finally:
+            self.processes.stop(sentinel)
+
+    def test_fixture_exception_after_spawn_confirms_owned_group_cleanup(self):
+        def cancelled(_child):
+            if (self.workspace / "fixture-ready").exists():
+                raise RuntimeError("TEST_ONLY outer fixture cancellation")
+
+        with self.assertRaisesRegex(RuntimeError, "outer fixture cancellation"):
+            self.processes.run(self.runner("sleep"), env=self.environment, timeout=5, guard=cancelled)
+        wrapper = self.processes.children[-1]
+        self.assertTrue(wrapper.cleanup_confirmed)
+        self.assertFalse(group_has_live_members(wrapper.pid))
+
+    @unittest.skipUnless(sys.platform == "linux", "direct child identity is observed through Linux procfs")
+    def test_killed_wrapper_collector_exits_before_owned_group_cleanup(self):
+        sentinel = self.processes.spawn([sys.executable, "-B", "-c", "import time;time.sleep(30)"])
+        child = self.processes.spawn(self.runner("sleep"), env=self.environment)
+        watcher = None
+
+        def direct_children():
+            # task/<pid>/children is optional in Linux kernels. Enumerate only
+            # bounded PID/parent metadata, then inspect exact owned candidates.
+            observed = self.processes.run(["/bin/ps", "-axo", "pid=,ppid="], timeout=2,
+                                         env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+            if observed.returncode or observed.stderr or len(observed.stdout) > 128 * 1024:
+                raise RuntimeError("owned child parent metadata observation failed or exceeded its limit")
+            rows = observed.stdout.decode("ascii").splitlines()
+            if len(rows) > 8192:
+                raise RuntimeError("owned child parent metadata exceeded its row limit")
+            children = []
+            for row in rows:
+                fields = row.split()
+                if len(fields) != 2 or not all(field.isdigit() for field in fields):
+                    raise RuntimeError("owned child parent metadata has an invalid shape")
+                if int(fields[1]) == child.pid:
+                    children.append(int(fields[0]))
+            return children
+
+        def identity(pid):
+            try:
+                fields = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
+                if fields[0] == "Z":
+                    return None
+                return fields[19], pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+            except FileNotFoundError:
+                return None
+
+        try:
+            deadline = time.monotonic() + 5
+            expected = [str(self.workspace / ".runner/report.py").encode(), b"watch-sections",
+                        str(self.workspace).encode(), str(child.pid).encode()]
+            while time.monotonic() < deadline:
+                for pid in direct_children():
+                    observed = identity(pid)
+                    if observed is not None and observed[1].rstrip(b"\0").split(b"\0")[1:] == expected:
+                        watcher = pid, observed
+                        break
+                if watcher is not None and (self.workspace / "fixture-ready").exists():
+                    break
+                child.read_ready(0.02)
+            self.assertIsNotNone(watcher, "actual private collector never executed")
+            self.assertTrue((self.workspace / "fixture-ready").exists())
+            child.process.kill()
+            child.process.wait(timeout=2)
+            deadline = time.monotonic() + 3
+            while identity(watcher[0]) == watcher[1] and time.monotonic() < deadline:
+                child.read_ready(0.03)
+            self.assertNotEqual(identity(watcher[0]), watcher[1], "collector survived its actual parent")
+            # The inert upstream intentionally still sleeps. The watcher must
+            # stop itself before fixture cleanup signals any remaining group.
+            self.assertTrue(group_has_live_members(child.pid))
+            self.assertIsNone(sentinel.process.poll())
+        finally:
+            try:
+                self.processes.stop(child)
+            finally:
+                self.processes.stop(sentinel)
 
 
 if __name__ == "__main__":

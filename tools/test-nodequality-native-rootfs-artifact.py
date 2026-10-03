@@ -73,6 +73,10 @@ class DerivationTests(unittest.TestCase):
         cls.runner = artifact.offline_runner(cls.legacy)
 
     def test_exact_canonical_sources_and_full_licenses_are_retained(self):
+        self.assertEqual(artifact.embedded(self.legacy, "SINAN_NODEQUALITY_REPORT_HELPER"),
+                         artifact.history.native_source("native-report.py"))
+        self.assertEqual(artifact.embedded(self.runner, "SINAN_NODEQUALITY_ROOTFS_HELPER"),
+                         artifact.history.source("rootfs.py"))
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["PINNED_CHAIN"]), self.bundle)
         self.assertEqual(artifact.embedded(self.runner, artifact.MARKERS["NODEQUALITY_LICENSE"]),
                          artifact.embedded(self.legacy, artifact.MARKERS["NODEQUALITY_LICENSE"]))

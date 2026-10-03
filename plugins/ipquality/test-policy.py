@@ -2,6 +2,7 @@
 """Offline fixtures for the standalone source closure and real request guard."""
 import argparse
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -44,6 +45,48 @@ def documentation_fixture_ip(value, family=None):
 
 
 class SourceClosureTests(unittest.TestCase):
+    def test_developer_fallback_uses_exact_reviewed_native_media_helpers(self):
+        policies = helper.policy_bytes()
+        node = HERE.parent / 'nodequality'
+        for name in ('browser', 'netflix'):
+            reviewed = (node / ('native-' + name + '-policy.py')).read_bytes()
+            self.assertEqual(policies[name], reviewed)
+            self.assertEqual(hashlib.sha256(reviewed).hexdigest(), helper.POLICIES[name])
+            self.assertNotEqual(policies[name], (node / (name + '-policy.py')).read_bytes())
+
+    def test_wrong_generic_media_helper_is_rejected_without_changing_reviewed_digest(self):
+        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-policy-closure-') as name:
+            root = Path(name)
+            here, shared = root / 'ipquality', root / 'nodequality'
+            here.mkdir()
+            shared.mkdir()
+            actual = helper.policy_bytes()
+            for role, content in actual.items():
+                filename = helper.REVIEWED_POLICY_FILES.get(role, role + '-policy.py')
+                (shared / filename).write_bytes(content)
+            with mock.patch.object(helper, '__file__', str(here / 'source-helper.py')):
+                self.assertEqual(helper.policy_bytes(), actual)
+                for role in ('browser', 'netflix'):
+                    path = shared / helper.REVIEWED_POLICY_FILES[role]
+                    path.write_bytes((HERE.parent / 'nodequality' / (role + '-policy.py')).read_bytes())
+                    with self.subTest(role=role), self.assertRaisesRegex(ValueError, 'identity mismatch: ' + role):
+                        helper.policy_bytes()
+                    path.write_bytes(actual[role])
+
+    def test_published_role_filenames_use_exact_copies_and_do_not_fall_back_on_mismatch(self):
+        with tempfile.TemporaryDirectory(prefix='sinan-ipquality-policy-offer-') as name:
+            here = Path(name) / 'ipquality'
+            policies = here / 'policies'
+            policies.mkdir(parents=True)
+            actual = helper.policy_bytes()
+            for role, content in actual.items():
+                (policies / (role + '-policy.py')).write_bytes(content)
+            with mock.patch.object(helper, '__file__', str(here / 'source-helper.py')):
+                self.assertEqual(helper.policy_bytes(), actual)
+                (policies / 'browser-policy.py').write_bytes(b'TEST_ONLY unreviewed helper')
+                with self.assertRaisesRegex(ValueError, 'identity mismatch: browser'):
+                    helper.policy_bytes()
+
     def test_exact_roles_and_full_license_are_required(self):
         lock = helper.canonical_lock()
         self.assertEqual(set(helper.validate(lock)), {'ip.sh', 'LICENSE.ip', 'ip-iso3166.json', 'ip-dnsbl.list'})

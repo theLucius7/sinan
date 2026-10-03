@@ -1,6 +1,6 @@
 # NodeQuality 制品自身的完整执行准入
 
-关联 [#28](https://github.com/theLucius7/sinan/issues/28)、[#65](https://github.com/theLucius7/sinan/issues/65)、[#66](https://github.com/theLucius7/sinan/issues/66)、[#82](https://github.com/theLucius7/sinan/issues/82)。本次源码以 `74b403c1365cfee157c2d191bd6255f7bc146aff` 为起点；本文件记录实现与待验范围，不提前记录测试通过。
+关联 [#28](https://github.com/theLucius7/sinan/issues/28)、[#65](https://github.com/theLucius7/sinan/issues/65)、[#66](https://github.com/theLucius7/sinan/issues/66)、[#82](https://github.com/theLucius7/sinan/issues/82)。原准入修订以 `74b403c1365cfee157c2d191bd6255f7bc146aff` 为起点；2026-10-03的r22上传与库存补修、实际最终结果见[分项记录](nodequality-r22-upload-and-history.md)和[本轮统一验收](all-open-issues-20261003.md)。
 
 ## 修复的实际入口
 
@@ -18,7 +18,11 @@ curl shim 不再为 rootfs 下载提供网络回退。保留的两个架构 next
 
 新增 `tools/nodequality-execution-inventory.py` 只读取已有的固定 gzip tar，不下载、不展开、不解析许可接受配置、不 chroot、挂载或执行任何成员。先在同一打开文件描述符上核对整份归档摘要，再逐成员读取；归档、解压字节、tar 扩展头、单成员、成员数和可执行文件数均有限制；读取循环检查 240 秒绝对截止，异常阻塞文件 I/O 仍需外层监督。路径越界、重复成员、特殊 tar 成员、错误 ELF 架构、摘要不匹配、超限或输入链接均拒绝。
 
-工具识别 ELF（包括没有可执行 mode 的库）、shebang 脚本及有执行 mode 的其他文件，保存路径、大小、格式、架构和摘要。root/home/etc 以及 `.config`、`.ssh`、`.gnupg` 的配置内容不读；链接不跟随，因此它不是完整依赖图审核。未知来源的 Ookla 即使改文件名，只要仍是普通 ELF，也会进入库存；它的字节身份不能因 dpkg 没有记录而遗漏。
+工具识别公开路径中的 ELF（包括没有可执行 mode 的库）、shebang 脚本及有执行 mode 的其他文件，保存路径、大小、格式、架构和摘要。root/home/etc 以及 `.config`、`.ssh`、`.gnupg` 的内容不读；链接不跟随，因此它不是完整依赖图审核。未知来源的 Ookla 即使改文件名，只要仍是这些公开路径中的普通 ELF，也会进入库存；其字节身份不依赖 dpkg 包记录。私有路径中的程序不能据此推断已经登记。
+
+2026-10-03 补修将私有路径里带执行 mode 的普通文件单独记录到 `unread_executable_files`，只保留 tar 中的路径、大小和 mode，不读取内容或生成文件摘要。私有路径中的无执行 mode 文件仍可能是 ELF 或可被解释器加载的脚本，因此 `complete_execution_inventory=false` 始终保持；`inventory_scope` 明确限定为公开路径的普通执行文件身份。GNU sparse 成员在读取内容前拒绝，避免把稀疏展开语义当作普通文件身份。
+
+集中修改冻结后的执行库存回归10项实际通过，覆盖私有执行mode元数据、稀疏成员拒绝及原静态身份边界。该结果来自小型归档夹具，不表示重新审计了下面两份历史BenchOS归档，也不补齐完整执行库存或许可。
 
 示例只针对已取得并授权做静态审计的本地归档：
 
@@ -28,7 +32,7 @@ python3 tools/nodequality-execution-inventory.py /PRIVATE/BenchOs.tar.gz \
   --sha256 5f844e73941c3623175c5cdc16b01db34c155d0d1bd9b0cf71f3d72e8b1148e1
 ```
 
-没有事先声明的库存时，输出观察结果并返回 3，明确尚未登记。`--declared-inventory /PRIVATE/declared.json` 要求 schema、架构、归档身份及每个观察可执行文件的路径/大小/摘要/格式/架构精确对应；漏报、多报、重复或字节变化均失败。精确匹配返回 0 仅表示已登记的身份与该静态库存相同，输出的 `full_start_allowed` 和 `rights_verified` 仍为 false。
+没有事先声明的库存时，输出观察结果并返回 3，明确尚未登记。`--declared-inventory /PRIVATE/declared.json` 要求 schema、架构、归档身份及每个观察可执行文件的路径/大小/摘要/格式/架构精确对应；漏报、多报、重复或字节变化均失败。精确匹配返回 0 仅表示已登记的公开路径身份与该静态库存相同；私有路径和链接遗漏仍显式保留，`complete_execution_inventory`、`full_start_allowed` 和 `rights_verified` 均为 false。
 
 声明不能自动从待验归档重新生成后当作来源证明；需要独立可信的版本、取得来源、对应源码/构建配方、完整许可证及实际许可授权证据。工具不解释许可证，也不接受归档中的第三方接受配置替代管理员授权。
 

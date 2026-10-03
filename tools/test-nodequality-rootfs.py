@@ -325,14 +325,17 @@ class ArchiveTests(unittest.TestCase):
 class MetadataTests(unittest.TestCase):
     def fixture(self, name):
         rows = inventory() + [{'path': 'usr/share', 'type': 'dir', 'mode': 0o755},
-                              {'path': 'usr/share/sinan-rootfs', 'type': 'dir', 'mode': 0o700}]
+                              {'path': 'usr/share/sinan-rootfs', 'type': 'dir', 'mode': 0o700},
+                              {'path': 'var', 'type': 'dir', 'mode': 0o755},
+                              {'path': 'var/lib', 'type': 'dir', 'mode': 0o755},
+                              {'path': 'var/lib/dpkg', 'type': 'dir', 'mode': 0o755}]
         contents = {path: b'{"fixture":true,"full_ready":false}' for path in rootfs.METADATA_NAMES}
         for path, content in contents.items():
             rows.append({'path': path, 'type': 'file', 'mode': 0o600, 'size': len(content),
                          'sha256': hashlib.sha256(content).hexdigest()})
         return Fixture(name, rows=sorted(rows, key=lambda row: row['path']), contents=contents), contents
 
-    def test_four_metadata_files_are_returned_only_after_the_complete_stream_matches(self):
+    def test_ip_profile_and_actual_package_status_are_returned_only_after_complete_stream_matches(self):
         with tempfile.TemporaryDirectory() as name:
             fixture, contents = self.fixture(name)
             value = fixture.loaded()
@@ -346,12 +349,25 @@ class MetadataTests(unittest.TestCase):
     def test_config_unlisted_duplicate_and_oversized_metadata_selection_rejects(self):
         with tempfile.TemporaryDirectory() as name:
             fixture, contents = self.fixture(name)
-            first = sorted(contents)[0]
+            first = 'usr/share/sinan-rootfs/provenance.json'
             for selection in ([first, first], ['root/.config/tool.json'], ['usr/bin/probe'], [], first):
                 with self.subTest(selection=selection), self.assertRaises(ValueError):
                     rootfs.read_metadata(fixture.archive, fixture.loaded(), selection)
             with mock.patch.object(rootfs, 'MAX_METADATA', 1), self.assertRaises(ValueError):
                 rootfs.read_metadata(fixture.archive, fixture.loaded(), [first])
+
+    def test_package_status_uses_its_own_bounded_read_without_relaxing_proof_limits(self):
+        with tempfile.TemporaryDirectory() as name:
+            fixture, contents = self.fixture(name)
+            with mock.patch.object(rootfs, 'MAX_METADATA', 1):
+                self.assertEqual(rootfs.read_metadata(fixture.archive, fixture.loaded(),
+                                                     ['var/lib/dpkg/status']),
+                                 {'var/lib/dpkg/status': contents['var/lib/dpkg/status']})
+                with self.assertRaises(ValueError):
+                    rootfs.read_metadata(fixture.archive, fixture.loaded(),
+                                         ['usr/share/sinan-rootfs/ipquality-profile.json'])
+            with mock.patch.object(rootfs, 'MAX_PACKAGE_STATUS', 1), self.assertRaises(ValueError):
+                rootfs.read_metadata(fixture.archive, fixture.loaded(), ['var/lib/dpkg/status'])
 
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'atomic extraction requires Linux renameat2')

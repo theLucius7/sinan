@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# Sinan runner for the original pinned NodeQuality script.
+set -euo pipefail
+umask 077
+version=a92fca6c0067df29ddd03fdc2fee6f3000f64545-sinan-native-r1
+usage() {
+  cat <<'USAGE'
+Usage: nodequality --workspace <ABSOLUTE_DIRECTORY> --mode daily|full --ip-version both|ipv4|ipv6 --network-mode low|normal [--upload-report true|false]
+       Daily mode requires --targets-file <WORKSPACE/daily-targets.json>.
+       nodequality --version
+       nodequality --execution-admission
+
+Daily execution requires Linux, root, Bash >= 4 and Python 3.
+Daily mode requires only Python 3 and performs bounded TCP checks and optional
+explicitly configured official node-IP queries. No rootfs, hardware benchmark,
+bandwidth test, upstream script or public upload runs. Without the private
+provider configuration, authenticated IP sources remain unconfigured.
+New full executions are refused before filesystem changes or upstream tools.
+The retained upstream source supports auditing and historical recovery only.
+Daily output and atomic section-*.json chapters stay in the private workspace.
+Historical full reports remain collected through the Agent's original saved
+version; this runner cannot resume or start their upstream benchmark program.
+USAGE
+}
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+if [[ ${1:-} == --version && $# == 1 ]]; then printf 'nodequality %s\n' "$version"; exit 0; fi
+if [[ ${1:-} == --help && $# == 1 ]]; then usage; exit 0; fi
+if [[ ${1:-} == --execution-admission && $# == 1 ]]; then
+  cat <<'SINAN_NODEQUALITY_EXECUTION_ADMISSION'
+@EXECUTION_ADMISSION@
+SINAN_NODEQUALITY_EXECUTION_ADMISSION
+  exit 0
+fi
+workspace=
+mode=full
+targets_file=
+ip_version=both
+network_mode=low
+upload_report=false
+while [[ $# != 0 ]]; do
+  [[ $# -ge 2 ]] || die 'each diagnostic option requires a value'
+  case "$1" in
+    --workspace) [[ -z $workspace ]] || die 'duplicate workspace'; workspace=$2 ;;
+    --mode) mode=$2 ;;
+    --targets-file) targets_file=$2 ;;
+    --ip-version) ip_version=$2 ;;
+    --network-mode) network_mode=$2 ;;
+    --upload-report) upload_report=$2 ;;
+    *) die 'unsupported diagnostic option' ;;
+  esac
+  shift 2
+done
+[[ $workspace == /* && $workspace != / && $workspace != *'$'* && $workspace != *'%'* ]] || die 'workspace must be a private absolute path'
+[[ $workspace != *'/../'* && $workspace != */.. && $workspace != *'/./'* ]] || die 'workspace traversal is forbidden'
+[[ $workspace != *$'\n'* && $workspace != *$'\r'* ]] || die 'workspace contains control characters'
+[[ $workspace != *[!a-zA-Z0-9/_.-]* ]] || die 'workspace must not contain whitespace or shell glob characters'
+case "$ip_version" in both|ipv4|ipv6) ;; *) die 'invalid IP version' ;; esac
+case "$network_mode" in low|normal) ;; *) die 'invalid network mode' ;; esac
+case "$upload_report" in true|false) ;; *) die 'invalid report upload option' ;; esac
+case "$mode" in daily|full) ;; *) die 'invalid diagnostic mode' ;; esac
+[[ $mode != full ]] || die 'new full diagnostics are paused: complete tool provenance, redistribution rights, upload control and host side effects remain unverified'
+if [[ $mode == daily ]]; then
+  [[ $network_mode == low && $upload_report == false ]] || die 'daily checks cannot run speed tests or upload reports'
+  [[ $targets_file == "$workspace/daily-targets.json" ]] || die 'daily targets must be in the private workspace'
+fi
+[[ $(uname -s) == Linux ]] || die 'diagnostics require Linux'
+[[ $EUID == 0 ]] || die 'diagnostics require root'
+[[ ${BASH_VERSINFO[0]} -ge 4 ]] || die 'diagnostics require Bash >= 4'
+for tool in python3; do
+  command -v "$tool" >/dev/null || die "missing runtime prerequisite: $tool"
+done
+[[ -d $workspace && ! -L $workspace ]] || die 'workspace must already exist and must not be a symlink'
+workspace=$(cd "$workspace" && pwd -P)
+[[ $workspace != / ]] || die 'workspace must not be the filesystem root'
+[[ ! -e $workspace/.runner && ! -L $workspace/.runner ]] || die 'workspace contains a previous runner directory'
+mkdir "$workspace/.runner.lock" 2>/dev/null || die 'workspace is already running'
+runtime=$workspace/.runner
+watcher_pid=
+cleanup() {
+  local directory attempt
+  trap '' INT TERM HUP
+  if [[ -n $watcher_pid ]]; then
+    kill "$watcher_pid" 2>/dev/null || true
+    for attempt in {1..20}; do
+      kill -0 "$watcher_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$watcher_pid" 2>/dev/null; then
+      kill -KILL "$watcher_pid" 2>/dev/null || true
+    fi
+    for attempt in {1..20}; do
+      kill -0 "$watcher_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$watcher_pid" 2>/dev/null; then
+      printf '%s\n' 'chapter watcher cleanup could not be confirmed; private workspace retained' >&2
+      return 1
+    fi
+    wait "$watcher_pid" 2>/dev/null || true
+  fi
+  if [[ -f $runtime/report.py ]]; then
+    python3 "$runtime/report.py" snapshot "$workspace" 2>/dev/null || true
+  fi
+  for directory in "$workspace"/.nodequality*/BenchOs; do
+    [[ -d $directory && ! -L $directory ]] || continue
+    umount -R -- "$directory/dev" 2>/dev/null || true
+    umount -- "$directory/proc" 2>/dev/null || true
+    umount -- "$directory/sys" 2>/dev/null || true
+    if ! mountpoint -q "$directory/dev" && ! mountpoint -q "$directory/proc" && ! mountpoint -q "$directory/sys"; then
+      rm -rf -- "${directory%/BenchOs}"
+    fi
+  done
+  rm -rf -- "$runtime"
+  rmdir -- "$workspace/.runner.lock" 2>/dev/null || true
+}
+finish() {
+  local status=$1
+  trap - EXIT
+  if ! cleanup; then
+    [[ $status != 0 ]] || status=1
+  fi
+  exit "$status"
+}
+trap 'finish "$?"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+mkdir "$runtime" "$runtime/bin"
+for output in result.txt report.zip report-url.txt log.txt upload.base64 upload-disabled.txt; do
+  [[ ! -e $workspace/$output && ! -L $workspace/$output ]] || die 'workspace already contains diagnostic output'
+done
+if [[ $mode == daily ]]; then
+  cat > "$runtime/official-ip.py" <<'SINAN_OFFICIAL_IP_HELPER'
+@OFFICIAL_IP_HELPER@
+SINAN_OFFICIAL_IP_HELPER
+  cat > "$runtime/daily.py" <<'SINAN_DAILY_HELPER'
+@DAILY_HELPER@
+SINAN_DAILY_HELPER
+  python3 "$runtime/daily.py" "$workspace" "$targets_file" "$ip_version"
+  exit 0
+fi
+for tool in curl tar base64 mount umount mountpoint chroot; do
+  command -v "$tool" >/dev/null || die "missing runtime prerequisite: $tool"
+done
+cat > "$runtime/NodeQuality.sh" <<'SINAN_NODEQUALITY_SOURCE_A92FCA6'
+@NODEQUALITY_SOURCE@
+SINAN_NODEQUALITY_SOURCE_A92FCA6
+cat > "$runtime/LICENSE" <<'SINAN_NODEQUALITY_LICENSE_A92FCA6'
+@NODEQUALITY_LICENSE@
+SINAN_NODEQUALITY_LICENSE_A92FCA6
+cat > "$runtime/report.py" <<'SINAN_NODEQUALITY_REPORT_HELPER'
+@REPORT_HELPER@
+SINAN_NODEQUALITY_REPORT_HELPER
+cat > "$runtime/exit-observer.sh" <<'SINAN_NODEQUALITY_EXIT_OBSERVER'
+@EXIT_OBSERVER@
+SINAN_NODEQUALITY_EXIT_OBSERVER
+cat > "$runtime/source-helper.py" <<'SINAN_NODEQUALITY_SOURCE_HELPER'
+@SOURCE_HELPER@
+SINAN_NODEQUALITY_SOURCE_HELPER
+cat > "$runtime/report-policy.py" <<'SINAN_NODEQUALITY_REPORT_POLICY'
+@REPORT_POLICY_HELPER@
+SINAN_NODEQUALITY_REPORT_POLICY
+cat > "$runtime/swap-policy.py" <<'SINAN_NODEQUALITY_SWAP_POLICY'
+@SWAP_POLICY_HELPER@
+SINAN_NODEQUALITY_SWAP_POLICY
+cat > "$runtime/dependency-policy.py" <<'SINAN_NODEQUALITY_DEPENDENCY_POLICY'
+@DEPENDENCY_POLICY_HELPER@
+SINAN_NODEQUALITY_DEPENDENCY_POLICY
+cat > "$runtime/data-policy.py" <<'SINAN_NODEQUALITY_DATA_POLICY'
+@DATA_POLICY_HELPER@
+SINAN_NODEQUALITY_DATA_POLICY
+cat > "$runtime/loader-policy.py" <<'SINAN_NODEQUALITY_LOADER_POLICY'
+@LOADER_POLICY_HELPER@
+SINAN_NODEQUALITY_LOADER_POLICY
+cat > "$runtime/ranking-policy.py" <<'SINAN_NODEQUALITY_RANKING_POLICY'
+@RANKING_POLICY_HELPER@
+SINAN_NODEQUALITY_RANKING_POLICY
+cat > "$runtime/ip-score-policy.py" <<'SINAN_NODEQUALITY_IP_SCORE_POLICY'
+@IP_SCORE_POLICY_HELPER@
+SINAN_NODEQUALITY_IP_SCORE_POLICY
+cat > "$runtime/native-browser-policy.py" <<'SINAN_NODEQUALITY_BROWSER_POLICY'
+@BROWSER_POLICY_HELPER@
+SINAN_NODEQUALITY_BROWSER_POLICY
+cat > "$runtime/query-policy.py" <<'SINAN_NODEQUALITY_QUERY_POLICY'
+@QUERY_POLICY_HELPER@
+SINAN_NODEQUALITY_QUERY_POLICY
+cat > "$runtime/access-policy.py" <<'SINAN_NODEQUALITY_ACCESS_POLICY'
+@ACCESS_POLICY_HELPER@
+SINAN_NODEQUALITY_ACCESS_POLICY
+cat > "$runtime/native-netflix-policy.py" <<'SINAN_NODEQUALITY_NETFLIX_POLICY'
+@NETFLIX_POLICY_HELPER@
+SINAN_NODEQUALITY_NETFLIX_POLICY
+cat > "$runtime/openai-policy.py" <<'SINAN_NODEQUALITY_OPENAI_POLICY'
+@OPENAI_POLICY_HELPER@
+SINAN_NODEQUALITY_OPENAI_POLICY
+cat > "$runtime/pinned-chain.json" <<'SINAN_NODEQUALITY_PINNED_CHAIN'
+@PINNED_CHAIN@
+SINAN_NODEQUALITY_PINNED_CHAIN
+python3 "$runtime/source-helper.py" materialize "$runtime/pinned-chain.json" "$runtime/sources"
+cat > "$runtime/bin/curl" <<'SINAN_NODEQUALITY_CURL_SHIM'
+@CURL_SHIM@
+SINAN_NODEQUALITY_CURL_SHIM
+cat > "$runtime/bin/chroot" <<'SINAN_NODEQUALITY_CHROOT_SHIM'
+@CHROOT_SHIM@
+SINAN_NODEQUALITY_CHROOT_SHIM
+chmod 0700 "$runtime/bin/curl" "$runtime/bin/chroot"
+export SINAN_REAL_CURL SINAN_REAL_CHROOT
+SINAN_REAL_CURL=$(command -v curl)
+SINAN_REAL_CHROOT=$(command -v chroot)
+export SINAN_REPORT_WORKSPACE=$workspace
+export SINAN_REPORT_HELPER=$runtime/report.py
+export SINAN_REPORT_UPSTREAM=$runtime/NodeQuality.sh
+export SINAN_UPLOAD_REPORT=$upload_report
+export SINAN_CHAIN_HELPER=$runtime/source-helper.py
+export SINAN_CHAIN_DIRECTORY=$runtime/sources
+export PATH="$runtime/bin:$PATH"
+ip_arguments=()
+case "$ip_version" in ipv4) ip_arguments=(-4) ;; ipv6) ip_arguments=(-6) ;; esac
+network_answer=y
+[[ $network_mode != low ]] || network_answer=l
+printf 'y\ny\n%s\ny\n' "$network_answer" > "$runtime/answers.txt"
+# Remember cancellation across the spawn/assignment window so cleanup always
+# knows which child it owns. The watcher also binds our actual parent PID.
+watcher_signal=
+trap 'watcher_signal=130' INT
+trap 'watcher_signal=143' TERM HUP
+python3 "$runtime/report.py" watch-sections "$workspace" "$$" &
+watcher_pid=$!
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+[[ -z $watcher_signal ]] || exit "$watcher_signal"
+set +e
+BASH_ENV="$runtime/exit-observer.sh" bash "$runtime/NodeQuality.sh" -d "$workspace" "${ip_arguments[@]}" \
+  < "$runtime/answers.txt" 2>&1 | python3 "$runtime/report.py" stream-log "$workspace/log.txt"
+upstream_status=${PIPESTATUS[0]}
+set -e
+printf '%s\n' "$upstream_status" > "$workspace/upstream-exit.txt"
+if ! python3 "$runtime/report.py" render "$workspace" 2> "$workspace/collector-error.txt"; then
+  cat "$workspace/collector-error.txt" >&2
+  die 'a complete local NodeQuality report was not produced'
+fi
+printf 'Local NodeQuality report: %s/result.txt\n' "$workspace"
+[[ ! -f $workspace/report-url.txt ]] || cat "$workspace/report-url.txt"
+# The fixed entrypoint uses exit 1 for its proven normal cleanup branch. A ZIP
+# alone never turns an arbitrary nonzero result into successful execution.
+if [[ $upstream_status == 1 && -f $runtime/upstream-completed ]]; then
+  IFS= read -r completion < "$runtime/upstream-completed"
+  [[ $completion != pinned-normal-cleanup ]] || exit 0
+fi
+exit "$upstream_status"

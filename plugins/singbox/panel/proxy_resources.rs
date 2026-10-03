@@ -14,6 +14,9 @@ use sinan_protocol::now_timestamp;
 use sqlx::{FromRow, PgConnection, Postgres, Transaction};
 use std::collections::BTreeMap;
 
+mod references;
+use references::node_chain_references;
+
 #[derive(Clone, Serialize, FromRow)]
 pub struct ResourceEndpoint {
     pub id: i64,
@@ -164,7 +167,7 @@ async fn read_resources(state: &AppState) -> ApiResult<Vec<ProxyResource>> {
         .fetch_all(&mut *tx)
         .await?;
         let user_count=sqlx::query_scalar("SELECT COUNT(DISTINCT g.user_id) FROM (SELECT user_id FROM accesses WHERE node_id=$1 AND direct_grant UNION SELECT up.user_id FROM singbox_user_policies up JOIN singbox_policy_nodes pn ON pn.group_id=up.group_id WHERE pn.node_id=$1) g JOIN users u ON u.id=g.user_id WHERE u.deleted_at IS NULL").bind(endpoint.id).fetch_one(&mut *tx).await?;
-        let references = node_chain_references(&mut tx, endpoint.id).await?;
+        let references = node_chain_references(&mut tx, endpoint.id, None).await?;
         let chain_refs = references
             .into_iter()
             .map(|reference| ChainReference {
@@ -474,18 +477,19 @@ pub(super) async fn ensure_chain_entry_unreferenced_on(
     id: i64,
     entry_node_id: i64,
 ) -> ApiResult<()> {
-    ensure_chain_unreferenced(tx, id).await?;
-    let policies = node_policies(tx, entry_node_id).await?;
-    if !policies.is_empty() {
-        return Err(reference_error(policies, vec![]));
-    }
-    let other_refs = node_chain_references(tx, entry_node_id)
-        .await?
-        .into_iter()
-        .filter(|reference| reference.id != id)
-        .collect::<Vec<_>>();
-    if !other_refs.is_empty() {
-        return Err(reference_error(vec![], other_refs));
+    let policies = sqlx::query_as::<_, PolicyReference>(
+        "SELECT p.id,p.name FROM singbox_policy_groups p WHERE
+            EXISTS(SELECT 1 FROM singbox_policy_chains c WHERE c.group_id=p.id AND c.chain_id=$1)
+            OR EXISTS(SELECT 1 FROM singbox_policy_nodes n WHERE n.group_id=p.id AND n.node_id=$2)
+            ORDER BY p.id LIMIT 32",
+    )
+    .bind(id)
+    .bind(entry_node_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let other_refs = node_chain_references(tx, entry_node_id, Some(id)).await?;
+    if !policies.is_empty() || !other_refs.is_empty() {
+        return Err(reference_error(policies, other_refs));
     }
     let retained: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM singbox_chains c WHERE c.id<>$1 AND (c.deleted_at IS NULL OR (c.path_kind='ordered' AND c.phase<>'retired')) AND (c.entry_node_id=$2 OR c.exit_node_id=$2)) OR EXISTS(SELECT 1 FROM singbox_chain_hops h JOIN singbox_live_chains c ON c.id=h.chain_id WHERE h.chain_id<>$1 AND h.managed_node_id=$2) OR EXISTS(SELECT 1 FROM singbox_ordered_chain_hops h JOIN singbox_chains c ON c.id=h.chain_id WHERE h.chain_id<>$1 AND (c.deleted_at IS NULL OR c.phase<>'retired') AND h.managed_node_id=$2 AND (h.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) OR EXISTS(SELECT 1 FROM unnest(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) AS selected(generation) WHERE selected.generation IS NOT NULL AND NOT EXISTS(SELECT 1 FROM singbox_ordered_chain_versions v WHERE v.chain_id=c.id AND v.generation=selected.generation))))")
         .bind(id).bind(entry_node_id).fetch_one(&mut **tx).await?;
@@ -538,18 +542,11 @@ struct NodeChainReference {
     state: String,
 }
 
-async fn node_chain_references(
-    connection: &mut PgConnection,
-    id: i64,
-) -> ApiResult<Vec<NodeChainReference>> {
-    Ok(sqlx::query_as("SELECT DISTINCT * FROM (SELECT c.id,c.name,CASE WHEN c.entry_node_id=$1 THEN 'entry' ELSE 'exit' END AS role,COALESCE(c.pending_generation,c.active_generation,1) AS generation,CASE WHEN c.entry_node_id=$1 THEN NULL ELSE h.position+1 END AS hop_position,CASE WHEN c.pending_generation IS NOT NULL THEN 'candidate' ELSE 'applied' END AS state FROM singbox_live_chains c LEFT JOIN singbox_chain_hops h ON h.chain_id=c.id AND h.generation=COALESCE(c.pending_generation,c.active_generation,1) WHERE c.entry_node_id=$1 OR c.exit_node_id=$1 OR h.managed_node_id=$1 UNION ALL SELECT c.id,c.name,CASE WHEN c.entry_node_id=$1 THEN 'entry' ELSE 'exit' END AS role,v.generation,CASE WHEN c.entry_node_id=$1 THEN NULL ELSE h.position END AS hop_position,CASE WHEN v.generation=c.applied_generation THEN 'applied' WHEN v.generation=c.candidate_generation THEN 'candidate' ELSE 'recovery' END AS state FROM singbox_chains c JOIN singbox_ordered_chain_versions v ON v.chain_id=c.id AND v.generation=ANY(ARRAY[c.desired_generation,c.applied_generation,c.candidate_generation,c.recovery_generation]) LEFT JOIN singbox_ordered_chain_hops h ON h.chain_id=c.id AND h.generation=v.generation WHERE c.path_kind='ordered' AND (c.deleted_at IS NULL OR c.phase<>'retired') AND (c.entry_node_id=$1 OR h.managed_node_id=$1)) refs ORDER BY id,generation,hop_position").bind(id).fetch_all(connection).await?)
-}
-
 async fn node_policies(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> ApiResult<Vec<PolicyReference>> {
-    Ok(sqlx::query_as("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_nodes n ON n.group_id=p.id WHERE n.node_id=$1 ORDER BY p.id")
+    Ok(sqlx::query_as("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_nodes n ON n.group_id=p.id WHERE n.node_id=$1 ORDER BY p.id LIMIT 32")
         .bind(id).fetch_all(&mut **tx).await?)
 }
 
@@ -557,7 +554,7 @@ pub(super) async fn ensure_chain_unreferenced(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> ApiResult<()> {
-    let policies = sqlx::query_as::<_, PolicyReference>("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_chains c ON c.group_id=p.id WHERE c.chain_id=$1 ORDER BY p.id")
+    let policies = sqlx::query_as::<_, PolicyReference>("SELECT p.id,p.name FROM singbox_policy_groups p JOIN singbox_policy_chains c ON c.group_id=p.id WHERE c.chain_id=$1 ORDER BY p.id LIMIT 32")
         .bind(id).fetch_all(&mut **tx).await?;
     if !policies.is_empty() {
         return Err(reference_error(policies, vec![]));
@@ -567,7 +564,7 @@ pub(super) async fn ensure_chain_unreferenced(
 
 async fn ensure_node_unreferenced(tx: &mut Transaction<'_, Postgres>, id: i64) -> ApiResult<()> {
     let policies = node_policies(tx, id).await?;
-    let chains = node_chain_references(tx, id).await?;
+    let chains = node_chain_references(tx, id, None).await?;
     if !policies.is_empty() || !chains.is_empty() {
         return Err(reference_error(policies, chains));
     }
@@ -579,7 +576,7 @@ fn reference_error(
     mut chains: Vec<NodeChainReference>,
 ) -> ApiError {
     // This administrator projection contains only bounded public identities.
-    // The guard already saw every reference, including those omitted here.
+    // Queries decide whether ownership exists before bounding the projection.
     policies.truncate(32);
     chains.truncate(32);
     for name in policies

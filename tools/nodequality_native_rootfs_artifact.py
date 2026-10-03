@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+import nodequality_history as history
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins/nodequality"
@@ -84,7 +85,7 @@ def module(name, path):
 
 
 def runtime():
-    return module("sinan_offline_rootfs", PLUGIN / "rootfs.py")
+    return history.rootfs_module()
 
 
 def digest(content):
@@ -143,9 +144,9 @@ def canonical_runner(bundle_bytes):
                                     rows["LICENSE.nodequality"])
     payloads = {"NODEQUALITY_SOURCE": entry, "NODEQUALITY_LICENSE": license_bytes,
                 "PINNED_CHAIN": bundle_bytes}
-    payloads.update({name: helper.ordinary(PLUGIN / filename, MAX_RUNNER)
+    payloads.update({name: history.native_source(filename) if name == "REPORT_HELPER" else helper.ordinary(PLUGIN / filename, MAX_RUNNER)
                      for name, filename in HELPERS.items()})
-    template = helper.ordinary(PLUGIN / "native-runner.sh.tmpl", MAX_RUNNER)
+    template = history.native_source("native-runner.sh.tmpl")
     for marker, payload in payloads.items():
         ensure(payload.endswith(b"\n"), "embedded offline payload must end with newline")
         template = replace_once(template, ("@" + marker + "@\n").encode(), payload)
@@ -169,7 +170,7 @@ def offline_runner(base):
     result = replace_once(result, ("version=" + CANONICAL_VERSION + "\n").encode(),
                           ("version=" + VERSION + "\n").encode())
     # Preserve the canonical artifact's complete-execution admission unchanged.
-    extractor = runtime().ordinary(PLUGIN / "rootfs.py", 128 * 1024)
+    extractor = history.source("rootfs.py")
     ensure(extractor.endswith(b"\n") and b"\nSINAN_NODEQUALITY_ROOTFS_HELPER\n" not in extractor,
            "invalid embedded rootfs helper")
     injection = b'''cat > "$runtime/rootfs.py" <<'SINAN_NODEQUALITY_ROOTFS_HELPER'

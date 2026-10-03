@@ -54,6 +54,43 @@ def write_atomic(path, data):
         temporary.unlink(missing_ok=True)
 
 
+def write_atomic_at(directory_fd, name, data):
+    if pathlib.PurePath(name).name != name or name in ("", ".", ".."):
+        raise ValueError("chapter output name is invalid")
+    temporary = "." + name + "." + os.urandom(16).hex()
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory_fd)
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            target.write(data)
+            target.flush()
+            os.fchmod(target.fileno(), 0o600)
+            os.fsync(target.fileno())
+        os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        os.fsync(directory_fd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+
+
+def read_section_at(directory_fd, name):
+    try:
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                             dir_fd=directory_fd)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(descriptor, "rb") as source:
+        metadata = os.fstat(source.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 512 * 1024:
+            raise ValueError("chapter output is not a bounded ordinary file")
+        data = source.read(512 * 1024 + 1)
+    if len(data) > 512 * 1024:
+        raise ValueError("chapter output is not a bounded ordinary file")
+    return data
+
+
 def clean_text(text):
     text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", text)
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
@@ -148,30 +185,36 @@ def bounded_text(data):
     return encoded[:MAX_SECTION-len(suffix)].decode("utf-8", errors="ignore") + suffix.decode("utf-8")
 
 
-def save_section(root, name, text, complete, *, blocking=True):
+def save_section(root, name, text, complete, *, blocking=True, publication_fd=None):
     if not text:
         return
     # Capture, the live watcher and cleanup share this stable private lock inode.
-    descriptor = os.open(root / ".sections.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    lock_path = root / ".sections.lock" if publication_fd is None else ".sections.lock"
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+                         0o600, dir_fd=publication_fd)
     with os.fdopen(descriptor, "r+") as lock:
         if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
             raise ValueError("chapter publication lock is not an ordinary file")
         operation = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
         fcntl.flock(lock, operation)
-        save_section_locked(root, name, text, complete)
+        save_section_locked(root, name, text, complete, publication_fd=publication_fd)
 
 
-def save_section_locked(root, name, text, complete):
+def save_section_locked(root, name, text, complete, *, publication_fd=None):
     path = root / ("section-" + name + ".json")
     previous = {}
-    if path.is_symlink():
-        # A dangling link is still rejected; exists() follows links and would
-        # otherwise let atomic publication silently replace the invalid entry.
-        raise ValueError("chapter output is not a bounded ordinary file")
-    if path.exists():
-        if not path.is_file() or path.stat().st_size > 512 * 1024:
+    saved = None
+    if publication_fd is not None:
+        saved = read_section_at(publication_fd, path.name)
+    else:
+        if path.is_symlink():
             raise ValueError("chapter output is not a bounded ordinary file")
-        previous = json.loads(path.read_text())
+        if path.exists():
+            if not path.is_file() or path.stat().st_size > 512 * 1024:
+                raise ValueError("chapter output is not a bounded ordinary file")
+            saved = path.read_text()
+    if saved is not None:
+        previous = json.loads(saved)
         if (not isinstance(previous, dict) or previous.get("name") != name
                 or not isinstance(previous.get("text"), str)
                 or type(previous.get("complete")) is not bool
@@ -186,10 +229,14 @@ def save_section_locked(root, name, text, complete):
         raise ValueError("saved chapter revision is exhausted")
     chapter = {"name": name, "text": text, "complete": complete,
                "revision": previous.get("revision", 0) + 1, "collected_at": int(time.time())}
-    write_atomic(path, json.dumps(chapter, ensure_ascii=False).encode("utf-8"))
+    data = json.dumps(chapter, ensure_ascii=False).encode("utf-8")
+    if publication_fd is None:
+        write_atomic(path, data)
+    else:
+        write_atomic_at(publication_fd, path.name, data)
 
 
-def publish_sections(root, files, archive=False, *, blocking=True):
+def publish_sections(root, files, archive=False, *, blocking=True, publication_fd=None):
     failed = []
     for index, (name, _) in enumerate(SECTIONS):
         text = bounded_text(files.get(name + ".log", b""))
@@ -206,7 +253,8 @@ def publish_sections(root, files, archive=False, *, blocking=True):
         # the preceding pipeline finished; archive capture proves the last stage.
         following = any(other + ".log" in files for other, _ in SECTIONS[index + 1:])
         try:
-            save_section(root, name, text, valid and (archive or following), blocking=blocking)
+            save_section(root, name, text, valid and (archive or following), blocking=blocking,
+                         publication_fd=publication_fd)
         except (OSError, ValueError):
             # Keep the rejected sidecar untouched and publish the other chapters
             # before reporting failure to the collector or live watcher.
@@ -215,12 +263,18 @@ def publish_sections(root, files, archive=False, *, blocking=True):
         raise ValueError("chapter publication failed: " + ", ".join(failed))
 
 
-def snapshot(root, *, blocking=True):
+def snapshot(root, *, blocking=True, publication_fd=None):
+    if publication_fd is None:
+        directory_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            return snapshot(root, blocking=blocking, publication_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
     capture_path = root / "upload.base64"
     if capture_path.is_file() and not capture_path.is_symlink():
         try:
             _, files = archive_files(root)
-            publish_sections(root, files, archive=True, blocking=blocking)
+            publish_sections(root, files, archive=True, blocking=blocking, publication_fd=publication_fd)
             return
         except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
             pass
@@ -240,7 +294,7 @@ def snapshot(root, *, blocking=True):
                     continue
                 with path.open("rb") as source:
                     files[path.name] = source.read(MAX_SECTION if extension == "log" else limit + 1)
-        publish_sections(root, files, blocking=blocking)
+        publish_sections(root, files, blocking=blocking, publication_fd=publication_fd)
 
 
 def watch_sections(root, owner_pid):
@@ -253,19 +307,27 @@ def watch_sections(root, owner_pid):
             raise ValueError("chapter watcher directory is not an ordinary directory")
         return metadata.st_dev, metadata.st_ino
 
-    root_identity = directory_identity(root)
-    runtime_identity = directory_identity(root / ".runner")
     stopped = False
 
     def stop(_signum, _frame):
         nonlocal stopped
         stopped = True
 
-    # A cancelled launcher may have ignored these signals while starting us.
-    # Set our own dispositions rather than inheriting an immortal watcher.
-    previous = {signum: signal.signal(signum, stop)
-                for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    # Retain both original directory objects. Path identity checks stop later
+    # iterations; publication must remain in the original root even when a
+    # replacement happens after source reads or during an atomic write.
+    directory_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    runtime_fd = None
+    previous = {}
     try:
+        runtime_fd = os.open(".runner", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                             dir_fd=directory_fd)
+        root_metadata, runtime_metadata = os.fstat(directory_fd), os.fstat(runtime_fd)
+        root_identity = root_metadata.st_dev, root_metadata.st_ino
+        runtime_identity = runtime_metadata.st_dev, runtime_metadata.st_ino
+        # Restore our own stop handlers when the launcher ignored signals.
+        previous = {signum: signal.signal(signum, stop)
+                    for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
         while not stopped and os.getppid() == owner_pid:
             try:
                 if (directory_identity(root) != root_identity
@@ -276,7 +338,7 @@ def watch_sections(root, owner_pid):
             try:
                 # A busy publisher must not prevent owner-loss or cancellation
                 # checks. Capture/render keep their serialized publication.
-                snapshot(root, blocking=False)
+                snapshot(root, blocking=False, publication_fd=directory_fd)
             except (OSError, ValueError, zipfile.BadZipFile, RuntimeError):
                 # Partial writes are retried while this run still owns us.
                 # Previously published chapters are never removed on exit.
@@ -286,6 +348,9 @@ def watch_sections(root, owner_pid):
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler)
+        if runtime_fd is not None:
+            os.close(runtime_fd)
+        os.close(directory_fd)
 
 
 def render(root):

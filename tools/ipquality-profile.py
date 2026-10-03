@@ -17,7 +17,8 @@ PUBLIC_NAME = 'ipquality-profile.json'
 PRIVATE_NAME = 'ipquality-profile-private.json'
 CODE_FILES = ('tools/ipquality-profile.py', 'tools/ipquality-rootfs.py',
               'tools/ipquality-inputs.py', 'tools/ipquality-inputs-capacity.py',
-              'tools/nodequality-rootfs-build.py', 'tools/nodequality-rootfs-collect.py')
+              'tools/nodequality-rootfs-build.py', 'tools/nodequality-rootfs-collect.py',
+              'plugins/nodequality/rootfs.py')
 FALSE_FLAGS = ('builder_approved', 'runtime_image_identity_verified',
                'reproducibility_verified', 'full_ready')
 
@@ -366,3 +367,35 @@ class Profile:
                       and derive.snapshot_file(Path(directory) / PRIVATE_NAME, build.MAX_LOCK, deadline) == private_identity,
                       'prepared minimal profile evidence changed during admission')
         return {'proof': proof, 'bytes': public, 'sha256': build.digest(public)}
+
+    def verify_export(self, directory, manifest, prepared, deadline):
+        """Read actual archived status and metadata after fresh prepared admission."""
+        build = self.build
+        specification = importlib.util.spec_from_file_location('sinan_ipquality_export_runtime',
+                                                               ROOT / 'plugins/nodequality/rootfs.py')
+        helper = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(helper)
+        original_deadline = helper._deadline
+        def checked_deadline(end):
+            deadline.check()
+            original_deadline(end)
+        helper._deadline = checked_deadline
+        names = [build.META_DIR + '/' + name for name in
+                 ('provenance.json', 'inputs-lock.json', 'source-inventory.json',
+                  'license-inventory.json', PUBLIC_NAME)]
+        metadata = helper.read_metadata(Path(directory) / 'rootfs.tar.gz', manifest,
+                                        names + ['var/lib/dpkg/status'])
+        for name in names:
+            build.require(metadata[name] == build.read_regular(Path(directory) / Path(name).name,
+                                                               build.MAX_METADATA, deadline),
+                          'minimal export archive differs from its inventory sidecar')
+        installed = build.verify_installed_packages(metadata['var/lib/dpkg/status'],
+                                                     prepared['lock']['packages'], exact_sources=True)
+        licenses = build.decode(metadata[build.META_DIR + '/license-inventory.json'])
+        build.require(licenses.get('packages') == installed,
+                      'minimal export actual package status differs from license inventory')
+        permitted = set(names)
+        build.require(all(row['path'] in permitted for row in manifest['entries']
+                          if row['path'].startswith(build.META_DIR + '/')),
+                      'minimal export contains private or unreviewed factory evidence')
+        return installed

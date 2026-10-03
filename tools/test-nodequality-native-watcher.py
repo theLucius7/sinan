@@ -2,6 +2,7 @@
 """Real watcher ownership regressions; no benchmark or hardware test is run."""
 import contextlib
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -516,6 +518,100 @@ class WatcherLifecycle(unittest.TestCase):
         row["process"].wait(timeout=2)
         self.assert_watcher_exits(row)
         self.assertEqual((workspace / "section-hardware_quality.json").read_bytes(), historical)
+
+
+class PublicationDirectoryContracts(unittest.TestCase):
+    def test_replacement_after_source_read_or_before_atomic_rename_cannot_receive_old_publication(self):
+        for stage, invocation in (("source_read", "watcher"), ("atomic_rename", "watcher"),
+                                  ("source_read", "snapshot"), ("atomic_rename", "snapshot")):
+            with self.subTest(stage=stage, invocation=invocation), tempfile.TemporaryDirectory(prefix="sinan-watcher-publication-") as name:
+                root = Path(name)
+                workspace = root / "workspace"
+                workspace.mkdir(mode=0o700)
+                (workspace / ".runner").mkdir(mode=0o700)
+                result = workspace / ".nodequality-owned" / "BenchOs" / "result"
+                result.mkdir(parents=True)
+                (result / "header_info.log").write_text("TEST_ONLY original source read before replacement")
+                previous = {"name": "header_info", "text": "TEST_ONLY previous original preview",
+                            "complete": False, "revision": 4, "collected_at": 1}
+                private_json(workspace / "section-header_info.json", previous)
+                original_identity = directory_identity(workspace)
+                displaced = root / "original-retained"
+                reached, released = threading.Event(), threading.Event()
+                errors, observations = [], []
+                replacement = {"name": "header_info", "text": "TEST_ONLY new owner chapter",
+                               "complete": False, "revision": 73, "collected_at": 2}
+                replacement_bytes = json.dumps(replacement).encode()
+
+                def replace_workspace():
+                    try:
+                        if not reached.wait(timeout=3):
+                            raise RuntimeError("publisher did not reach the source/publication barrier")
+                        workspace.rename(displaced)
+                        workspace.mkdir(mode=0o700)
+                        (workspace / ".runner").mkdir(mode=0o700)
+                        (workspace / "section-header_info.json").write_bytes(replacement_bytes)
+                        (workspace / ".sections.lock").write_bytes(b"TEST_ONLY replacement lock")
+                    except BaseException as error:
+                        errors.append(error)
+                    finally:
+                        released.set()
+
+                spec = importlib.util.spec_from_file_location("publication_report", REPORT)
+                report = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(report)
+                publish, replace = report.publish_sections, report.os.replace
+
+                def pause(directory_fd):
+                    metadata = os.fstat(directory_fd)
+                    observations.append((metadata.st_dev, metadata.st_ino))
+                    reached.set()
+                    if not released.wait(timeout=3):
+                        raise RuntimeError("replacement fixture did not release publication")
+
+                def publish_after_barrier(*args, **kwargs):
+                    pause(kwargs["publication_fd"])
+                    return publish(*args, **kwargs)
+
+                def rename_after_barrier(*args, **kwargs):
+                    if args[1] == "section-header_info.json":
+                        self.assertEqual(kwargs["src_dir_fd"], kwargs["dst_dir_fd"])
+                        pause(kwargs["dst_dir_fd"])
+                    return replace(*args, **kwargs)
+
+                sleeps = []
+
+                def bounded_next_iteration(_seconds):
+                    sleeps.append(True)
+                    if len(sleeps) > 1 or errors:
+                        raise AssertionError("watcher followed replacement or fixture failed")
+
+                mutation = threading.Thread(target=replace_workspace)
+                mutation.start()
+                try:
+                    publication_patch = (mock.patch.object(report, "publish_sections", side_effect=publish_after_barrier)
+                        if stage == "source_read" else mock.patch.object(report.os, "replace", side_effect=rename_after_barrier))
+                    with mock.patch.object(report.time, "sleep", side_effect=bounded_next_iteration), \
+                            publication_patch:
+                        if invocation == "watcher":
+                            report.watch_sections(workspace, os.getppid())
+                        else:
+                            report.snapshot(workspace, blocking=False)
+                finally:
+                    released.set()
+                    mutation.join(timeout=4)
+                self.assertFalse(mutation.is_alive())
+                self.assertEqual(errors, [])
+                self.assertEqual(observations, [original_identity])
+                self.assertEqual((workspace / "section-header_info.json").read_bytes(), replacement_bytes)
+                self.assertEqual((workspace / ".sections.lock").read_bytes(), b"TEST_ONLY replacement lock")
+                self.assertEqual(set(path.name for path in workspace.iterdir()),
+                                 {".runner", ".sections.lock", "section-header_info.json"})
+                old = json.loads((displaced / "section-header_info.json").read_bytes())
+                self.assertEqual(old["text"], "TEST_ONLY original source read before replacement")
+                self.assertEqual(old["revision"], 5)
+                self.assertEqual(stat.S_IMODE((displaced / "section-header_info.json").stat().st_mode), 0o600)
+                self.assertEqual(list(displaced.glob(".section-header_info.json.*")), [])
 
 
 class ReadinessContracts(unittest.TestCase):

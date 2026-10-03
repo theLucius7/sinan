@@ -1,6 +1,6 @@
 # NodeQuality 报告采集器的运行所有权与异常收尾
 
-主线整合说明：下文及机器收据是作者原分支的冻结证据，本聊天未重演其历史 PID 清理。整合后的生命周期补修放在独立的 `native-report.py`、`native-runner.sh.tmpl` 及 native 夹具；既有 r19 通用报告／wrapper、r20/r21 查询的原字节和 full 门禁保持。新输入需要单独验证，不能把下文 74 项直接列为本聊天的通过数量。
+主线整合说明：下文及机器收据是作者原分支的冻结证据，本聊天未重演其历史 PID 清理。2026-10-03 补修覆盖当前原 `report.py`/`runner.sh.tmpl` 和独立 `native-report.py`/`native-runner.sh.tmpl`，新身份分别为 r22/native-r2；必要的 r19/native-r1 历史源码素材严格固定，r20/r21/offline-rootfs-r1 的原身份及 full 门禁保持。新输入需要单独验证，不能把下文 74 项直接列为本聊天的通过数量。
 
 本步骤修复 [Issue #152](https://github.com/theLucius7/sinan/issues/152)，承接 [集成交付索引](integrated-delivery.md)。基线 `6eaa1728d4249920be867ab9644726afadfccba0` 的只读本机盘点先发现 20 个具名旧 inert fixture 的 `report.py watch-sections`；最后全进程核对另外发现同一批历史进程组中的 6 个普通临时目录 fixture。共 26 个，全部 PPID=1，全部工作目录已删除，启动时间均早于本步骤。两次现场各在停止对应进程之前固定到私有证据；它们不代表仍在运行的完整验收。
 

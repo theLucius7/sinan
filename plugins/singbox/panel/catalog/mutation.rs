@@ -290,15 +290,16 @@ pub async fn batch_remove(
                     .await?
             }
             "chain" => {
-                let used: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM singbox_policy_chains WHERE chain_id=$1)",
+                let entry =
+                    sqlx::query_scalar("SELECT entry_node_id FROM singbox_live_chains WHERE id=$1")
+                        .bind(item.id)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .ok_or(ApiError::NotFound)?;
+                super::super::proxy_resources::ensure_chain_entry_unreferenced_on(
+                    &mut tx, item.id, entry,
                 )
-                .bind(item.id)
-                .fetch_one(&mut *tx)
                 .await?;
-                if used {
-                    return Err(item_error(item, "仍被策略组引用，请先解除引用"));
-                }
             }
             _ => unreachable!(),
         }

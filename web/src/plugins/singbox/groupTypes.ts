@@ -13,7 +13,7 @@ export type ResourceEndpoint = {
 export type ProxyResource = {
   kind: ProxyResourceKind; id: number; name: string; entry: ResourceEndpoint; exit: ResourceEndpoint | null;
   available: boolean; unavailable_reasons: string[]; policy_group_ids: number[]; user_count: number;
-  chain_refs: { id: number; name: string; role: 'entry' | 'exit'; hop_position: number | null; generation: number; state: 'applied' | 'candidate' | 'recovery' }[];
+  chain_refs: { id: number; name: string; role: 'entry' | 'exit'; hop_position: number | null; generation: number; state: 'desired' | 'applied' | 'candidate' | 'recovery' | 'retained' | 'unresolved' }[];
   settings_revision: number; path_kind: 'legacy' | 'ordered' | null; hops: PublicHop[]; path_state: PathState | null;
 }
 export type PublicHop = { kind: 'managed'; position: number; node_id: number; endpoint_version_id: string; endpoint: ResourceEndpoint }
@@ -99,7 +99,7 @@ export function validProxyResource(value: unknown): value is ProxyResource {
     && typeof value.available === 'boolean' && Array.isArray(value.unavailable_reasons) && value.unavailable_reasons.every(reason => typeof reason === 'string')
     && Array.isArray(value.policy_group_ids) && value.policy_group_ids.every(id => integer(id, 1)) && integer(value.user_count)
     && Array.isArray(value.chain_refs) && value.chain_refs.every(ref => object(ref) && exact(ref, 'id name role hop_position generation state') && integer(ref.id, 1) && typeof ref.name === 'string' && ['entry', 'exit'].includes(String(ref.role))
-      && (ref.role === 'entry' ? ref.hop_position === null : integer(ref.hop_position, 1) && ref.hop_position <= 8) && integer(ref.generation, 1) && ['applied', 'candidate', 'recovery'].includes(String(ref.state)))
+      && (ref.role === 'entry' ? ref.hop_position === null : integer(ref.hop_position, 1) && ref.hop_position <= 8) && integer(ref.generation, 1) && ['desired', 'applied', 'candidate', 'recovery', 'retained', 'unresolved'].includes(String(ref.state)))
 }
 export function validProxyResources(value: unknown): value is ProxyResource[] {
   return Array.isArray(value) && value.every(validProxyResource) && new Set(value.map(proxyResourceKey)).size === value.length

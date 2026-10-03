@@ -860,14 +860,20 @@ def verify_authenticated_sources(materials, cache, deadline):
         require(checksum_rows(row.get('Checksums-Sha256', '')) ==
                 {value['name']: {key: value[key] for key in ('sha256', 'size')} for value in item['files']},
                 'corresponding source file inventory is incomplete or altered')
-    inventory = {'schema': 1, 'arch': lock['arch'], 'packages': lock['packages'],
+    return material_inventory(materials), signatures
+
+
+def material_inventory(materials):
+    """Derive the public source inventory from the exact fixed material closure."""
+    repos = validate_materials(materials)
+    lock = materials
+    return {'schema': 1, 'arch': lock['arch'], 'packages': lock['packages'],
                  'sources': [{'name': row['name'], 'version': row['version'], 'repository': row['repository'],
                               'directory': row['directory'], 'files': [dict(name=value['name'], sha256=value['sha256'], size=value['size'],
                                   url=repository_url(repos[row['repository']], row['directory'] + '/' + value['name'])) for value in row['files']]}
                              for row in lock['sources']],
                  'tools': [{'command': command, 'package': package, 'architectures': sorted(ARCHES)}
                            for command, package in sorted(TOOL_PACKAGES.items())], 'pending_capabilities': PENDING}
-    return inventory, signatures
 
 
 def write_new(path, content, mode=0o644):
@@ -1182,10 +1188,24 @@ def build_plan(prepared, tree):
 
 
 def installed_packages(tree, prepared):
-    rows = list(control_records(read_regular(input_path(tree, 'var/lib/dpkg/status'), MAX_LOCK)))
-    actual = {(row.get('Package'), row.get('Version'), row.get('Architecture')) for row in rows if row.get('Status') == 'install ok installed'}
-    expected = {(row['name'], row['version'], row['architecture']) for row in prepared['lock']['packages']}
+    return verify_installed_packages(read_regular(input_path(tree, 'var/lib/dpkg/status'), MAX_LOCK),
+                                     prepared['lock']['packages'], exact_sources=INPUT_PROFILE is not None)
+
+
+def verify_installed_packages(content, packages, exact_sources=False):
+    """Check actual dpkg records without executing or extracting the rootfs."""
+    rows = list(control_records(content))
+    installed = [row for row in rows if row.get('Status') == 'install ok installed']
+    actual = {(row.get('Package'), row.get('Version'), row.get('Architecture')) for row in installed}
+    expected = {(row['name'], row['version'], row['architecture']) for row in packages}
     require(actual == expected, 'installed packages differ from the authenticated fixed closure')
+    if exact_sources:
+        require(len(installed) == len(actual) and len(installed) == len(rows),
+                'minimal package status contains duplicate or uninstalled records')
+        source_pairs = {row['name']: (row['source_name'], row['source_version']) for row in packages}
+        for row in installed:
+            require(source_pair(row) == source_pairs[row['Package']],
+                    'installed package corresponding source differs from the minimal closure')
     return [{'name': name, 'version': version, 'architecture': arch} for name, version, arch in sorted(actual)]
 
 
@@ -1639,6 +1659,8 @@ def verify_export(rootfs_directory, prepared, arch, _deadline=None):
     require(type(reserve) is int and 0 < reserve < MAX_ARCHIVE
             and receipt['archive']['size'] + receipt['manifest']['size'] + reserve <= MAX_ARCHIVE,
             'export exceeds fixed outer budget')
+    if INPUT_PROFILE is not None:
+        INPUT_PROFILE.verify_export(directory, manifest, prepared, deadline)
     return receipt
 
 

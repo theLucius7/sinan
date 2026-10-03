@@ -17,6 +17,7 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +116,35 @@ class BootstrapTests(unittest.TestCase):
             candidates = bootstrap.catalog("https://panel.example.com", "fixture", "linux-musl-arm64", "latest")
         self.assertEqual([item["version"] for item in candidates], ["0.10.0", "0.9.0"])
         self.assertEqual(opener.return_value.open.call_args.args[0], url)
+
+    def test_explicit_catalog_failure_distinguishes_compatibility_without_exposing_panel_data(self):
+        private = "PRIVATE_TOKEN@private-panel.example.test/install?token=secret"
+        for code, message, expected in (
+                (409, "所选 Agent 版本尚未导入已校验的签名 Release", "尚未导入"),
+                (409, "所选 Agent 版本与当前面板协议不兼容，请选择兼容的已签名版本", "协议不兼容"),
+                (409, "所选历史 Agent 不支持当前标准安装与服务合同：" + private, "历史 Agent 不支持"),
+                (409, "所选 Agent 版本不包含该平台可安装的制品，请核对平台、架构及稳定版本要求", "本机平台"),
+                (401, private, "令牌无效或已过期"),
+                (500, private, "无法获取接入版本"),
+                (409, private, "无法获取接入版本"),
+                (409, {"private": private}, "无法获取接入版本")):
+            error = urllib.error.HTTPError("https://" + private, code, private, {},
+                                           io.BytesIO(json.dumps({"error": message}).encode()))
+            with self.subTest(code=code, expected=expected), patch.object(bootstrap, "panel_opener") as opener:
+                opener.return_value.open.side_effect = error
+                with self.assertRaisesRegex(ValueError, expected) as refusal:
+                    bootstrap.catalog("https://panel.example.com", "TEST_ONLY token", "linux-musl-amd64", "0.1.0")
+                self.assertNotIn(private, str(refusal.exception))
+                self.assertIsNone(refusal.exception.__cause__)
+                self.assertEqual(opener.return_value.open.call_count, 1)
+
+    def test_catalog_refusal_body_shares_deadline_and_has_a_size_limit(self):
+        for payload in (b"{" + b"x" * 8192, b"not-json", b'[]'):
+            error = urllib.error.HTTPError("https://panel.example.com", 409, "refused", {}, io.BytesIO(payload))
+            self.assertIn("无法获取接入版本", bootstrap.catalog_refusal(error, time.monotonic() + 1))
+        error = urllib.error.HTTPError("https://panel.example.com", 409, "refused", {},
+                                       io.BytesIO(b'{"error":"private"}'))
+        self.assertIn("无法获取接入版本", bootstrap.catalog_refusal(error, time.monotonic() - 1))
 
     def test_slow_private_catalog_cannot_renew_its_total_deadline(self):
         payload = json.dumps({"versions": [{"version": "0.3.0", "tag": "agent-v0.3.0",

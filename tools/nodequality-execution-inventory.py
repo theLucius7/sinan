@@ -121,7 +121,7 @@ def scan(path, architecture, expected_sha256):
         if actual != expected_sha256:
             raise ValueError('rootfs archive SHA256 mismatch')
         raw.seek(0)
-        rows, seen, excluded, links = [], set(), [], 0
+        rows, seen, excluded, unread_executables, links = [], set(), [], [], 0
         with gzip.GzipFile(fileobj=raw) as compressed:
             reader = ExpandedReader(compressed, deadline)
             with tarfile.open(fileobj=reader, mode='r|', tarinfo=BoundedTarInfo, ignore_zeros=True) as archive:
@@ -133,6 +133,8 @@ def scan(path, architecture, expected_sha256):
                     seen.add(name)
                     if member.size < 0 or member.size > MAX_MEMBER:
                         raise ValueError('rootfs member exceeds its byte limit')
+                    if member.sparse is not None:
+                        raise ValueError('sparse rootfs members are unsupported')
                     if member.isdir():
                         continue
                     if member.issym() or member.islnk():
@@ -144,6 +146,14 @@ def scan(path, architecture, expected_sha256):
                         raise ValueError('rootfs contains a special archive member')
                     if private_configuration(name):
                         excluded.append(name)
+                        # Retain only tar metadata. An executable in a private
+                        # path must be visible as an unresolved omission without
+                        # opening configuration or credential file contents.
+                        if member.mode & 0o111:
+                            if len(unread_executables) >= MAX_EXECUTABLES:
+                                raise ValueError('unread executable metadata limit exceeded')
+                            unread_executables.append(dict(path=name, size=member.size,
+                                                           mode=member.mode & 0o7777))
                         continue
                     stream = archive.extractfile(member)
                     if stream is None:
@@ -175,9 +185,12 @@ def scan(path, architecture, expected_sha256):
                 files=sorted(rows, key=lambda row: row['path']),
                 members=len(seen), links_not_followed=links,
                 configuration_files_not_read=len(excluded),
+                unread_executable_files=sorted(unread_executables, key=lambda row: row['path']),
+                inventory_scope='public-ordinary-executable-identities',
+                complete_execution_inventory=False,
                 full_start_allowed=False,
                 rights_verified=False,
-                remaining='Link targets, private configuration, source recipes, tool rights, uploads and host side effects require separate review.')
+                remaining='Executable metadata in private paths, non-executable files in private paths, link targets, source recipes, tool rights, uploads and host side effects require separate review.')
 
 
 def declared_identities(path, report):
