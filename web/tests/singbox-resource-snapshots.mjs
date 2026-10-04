@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -6,6 +7,13 @@ import { resolve, extname, sep } from 'node:path'
 
 // TEST_ONLY: exercise shipped UI against private loopback APIs. No real provider or credentials.
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
+// TEST_ONLY independent read-only view; no actual preflight or device evidence.
+const operationsViewFixture = {
+  runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
+  preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+  drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未读取进程或文件。' } },
+  changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
+}
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
 const server = createServer(async (request, response) => {
@@ -75,11 +83,13 @@ try {
         else if (path === `${prefix}/subscription-sources`) value = sources
         else if (path === `${prefix}/subscription-sources/10/nodes`) value = [{ id: 101, source_id: 10, node_version_id: 201, source_revision_id: 100, identity_epoch: 1, name: 'TEST_ONLY 外部段', protocol: 'trojan', server: '127.0.0.1', port: 443, transport: 'tcp', tcp: true, udp: false, selectable: true, present: true, identity_unique: true, reason: null }]
         else if (path === `${prefix}/servers/1/deployments`) value = { status, history: [], pending: false, enabled_nodes: 1, authorized_nodes: 1 }
+        else if (!url.search && path === `${prefix}/servers/1/operations-view`) value = operationsViewFixture
         else if (path === `${prefix}/servers/1/runtime-operations`) value = operation
         else if (path === `${prefix}/proxy-resources/chain/7`) value = detail
         else { totals.unexpected.push(`${method} ${path}`); return route.fulfill({ status: 404, json: {} }) }
         return route.fulfill({ json: value })
       })
+      await installControlCenterFixtures(page)
       try { await page.goto(`${origin}/#${hash}`); await callback(control); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); ++totals.scenarios }
       finally { for (const gate of gates.values()) gate.release(); await page.close() }
     }
@@ -97,7 +107,7 @@ try {
       const { page, writes } = control
       await page.getByRole('button', { name: '创建节点', exact: true }).first().click()
       const dialog = page.getByRole('dialog'); await dialog.locator('[name=name]').fill('TEST_ONLY 节点草稿'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost')
-      await block(control, `${prefix}/servers`, () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '创建并自动发布', exact: true }).click(), async () => assert.equal(await dialog.locator('[name=name]').inputValue(), 'TEST_ONLY 节点草稿'))
+      await block(control, `${prefix}/servers`, () => nodesRefresh(page), () => forceForm(dialog.locator('form')), () => dialog.getByRole('button', { name: '创建目标节点', exact: true }).click(), async () => assert.equal(await dialog.locator('[name=name]').inputValue(), 'TEST_ONLY 节点草稿'))
       assert.equal(writes[0].body.server_id, 1)
     })
     await fixture('/plugins/sing-box/nodes', async ({ page, hosts, writes }) => {
@@ -106,7 +116,7 @@ try {
       hosts.splice(0, 1); await nodesRefresh(page)
       await dialog.getByText('已选节点所属服务器已不存在或未启用；当前草稿已保留。', { exact: true }).waitFor()
       assert.equal(await dialog.locator('[name=server_id]').inputValue(), '1'); await forceForm(dialog.locator('form')); assert.equal(writes.length, 0)
-      await dialog.locator('[name=server_id]').selectOption('2'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost'); await dialog.getByRole('button', { name: '创建并自动发布', exact: true }).click()
+      await dialog.locator('[name=server_id]').selectOption('2'); await dialog.locator('[name=public_host]').fill('127.0.0.1'); await dialog.locator('[name=sni]').fill('localhost'); await dialog.getByRole('button', { name: '创建目标节点', exact: true }).click()
       await wait(() => writes.length === 1, 'Explicit new server selection'); assert.equal(writes[0].body.server_id, 2)
     })
     await fixture('/plugins/sing-box/nodes', async control => {

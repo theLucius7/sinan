@@ -65,6 +65,19 @@ class CoreBoundaryTests(unittest.TestCase):
         findings = boundary.violations(relative, native.replace('.get("User")', '.get("User"); user_id=1'))
         self.assertEqual(findings, [(2, 'user')])
 
+    def test_certificate_native_account_fixture_exception_is_exact_and_file_scoped(self):
+        relative = "src/system_network/certificates.rs"
+        for native in ('loaded.insert("User".into(), "operator".into());',
+                       'loaded.insert("User".into(), String::new());'):
+            with self.subTest(native=native):
+                self.assertFalse(boundary.violations(relative, native))
+                self.assertTrue(boundary.violations("src/transport.rs", native))
+                self.assertEqual(boundary.violations(relative, native + " user_id=1;"),
+                                 [(1, 'user')])
+        for native in ('other.insert("User".into(), String::new());',
+                       'loaded.insert("User", String::new());'):
+            self.assertTrue(boundary.violations(relative, native))
+
     def test_macos_account_path_exception_does_not_hide_business_routes(self):
         relative = "src/system/deploy/native/unix.rs"
         for source in ('"/Users".into()', 'format!("/Users/{name}")'):

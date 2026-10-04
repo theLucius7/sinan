@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -79,6 +80,7 @@ try {
         pending.push(task); return task
       })
       try {
+        await installControlCenterFixtures(page)
         await page.goto(`${origin}/#${routeHash}`)
         await wait(() => page.getByRole('button', { name: '创建链路', exact: true }).isEnabled(), 'Initial chain snapshots')
         await callback(control)

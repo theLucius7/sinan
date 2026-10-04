@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // Built-page regression with isolated API fixtures; never connects to a deployed panel.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -66,6 +67,7 @@ try {
       if (['/metrics', '/probes', '/probe-results'].some(suffix => path.endsWith(suffix))) return route.fulfill({ json: [] })
       throw new Error(`Unexpected API: ${path}`)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers`)
     await page.getByRole('link', { name: '服务器看板', exact: true }).click()
     await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
@@ -110,6 +112,7 @@ try {
     assert(page.url().endsWith('/#/dashboard/1'))
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
     await page.locator('.d-fleet tbody tr').first().waitFor()
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview/1`)
     await page.getByRole('link', { name: '返回服务器看板', exact: true }).click()
     assert(page.url().endsWith('/#/dashboard'))
@@ -176,6 +179,7 @@ try {
     await page.getByRole('button', { name: '刷新服务器', exact: true }).click()
     await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
     const loggedOut = serversRead
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/dashboard`)
     await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
     assert.equal(serversRead, loggedOut)

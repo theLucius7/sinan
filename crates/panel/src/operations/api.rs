@@ -366,9 +366,116 @@ pub async fn resume(
 #[serde(deny_unknown_fields)]
 pub struct Reconciliation {
     server_id: i64,
+    operation_id: Uuid,
+    inspection_id: Uuid,
     process_stopped: bool,
+    cleanup_confirmed: bool,
     observed_at: i64,
     evidence: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Inspection {
+    server_id: i64,
+    operation_id: Uuid,
+}
+
+async fn authorize_reconciliation(
+    state: &AppState,
+    headers: &HeaderMap,
+    id: Uuid,
+    server: i64,
+    operation: Uuid,
+) -> ApiResult<(i64, Vec<(Option<i64>, String)>)> {
+    let ids = targets(&state.pool, id).await?;
+    let actor = authorize(state, headers, &ids, true).await?;
+    let spec: Value = sqlx::query_scalar("SELECT spec FROM operations_jobs WHERE id=$1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    let plan: Plan = serde_json::from_value(spec["plan"].clone()).map_err(anyhow::Error::from)?;
+    authorize_steps(state, headers, &ids, &plan).await?;
+    let original: Value = sqlx::query_scalar("SELECT c.operation FROM fleet_operations c JOIN operations_target_steps t ON t.fleet_operation_id=c.id WHERE c.id=$1 AND c.automation_job_id=$2 AND c.server_id=$3 AND t.job_id=$2 AND t.server_id=$3")
+        .bind(operation).bind(id).bind(server).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    let original = serde_json::from_value(original).map_err(anyhow::Error::from)?;
+    crate::fleet::reconciliation::authorize(state, headers, server, &original).await?;
+    let mut permissions = crate::fleet::reconciliation::permissions(server, &original);
+    for target in &ids {
+        permissions.push((Some(*target), "operations:write".into()));
+        for step in &plan.steps {
+            if !step.is_panel() {
+                permissions.push((Some(*target), step.permission().to_owned()));
+            }
+        }
+    }
+    if plan.steps.iter().any(|step| step.is_panel()) {
+        permissions.push((None, "recovery:write".into()));
+    }
+    Ok((actor, permissions))
+}
+
+async fn lock_uncertain_operation(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    server: i64,
+    operation: Uuid,
+) -> ApiResult<()> {
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM operations_jobs WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .fetch_one(&mut **tx)
+            .await?;
+    if !matches!(status.as_str(), "uncertain" | "cancel_requested") {
+        return Err(ApiError::Conflict(
+            "只有执行结果未知的任务可人工核对".into(),
+        ));
+    }
+    let eligible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_target_steps WHERE job_id=$1 AND server_id=$2 AND fleet_operation_id=$3 AND state='uncertain' AND runtime_operation_id IS NULL AND position NOT IN (SELECT position FROM operations_panel_steps WHERE job_id=$1))")
+        .bind(id).bind(server).bind(operation).fetch_one(&mut **tx).await?;
+    if !eligible {
+        return Err(ApiError::Conflict(
+            "须选择此作业的确切未知日常操作；部署和备份使用各自证据核对流程".into(),
+        ));
+    }
+    sqlx::query("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
+        .bind(server)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+pub async fn inspect_reconciliation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(request): Json<Inspection>,
+) -> ApiResult<Json<Value>> {
+    let (actor, permissions) = authorize_reconciliation(
+        &state,
+        &headers,
+        id,
+        request.server_id,
+        request.operation_id,
+    )
+    .await?;
+    let mut tx = state.pool.begin().await?;
+    crate::fleet::reconciliation::lock_authorization(&mut tx, &headers, actor, &permissions)
+        .await?;
+    lock_uncertain_operation(&mut tx, id, request.server_id, request.operation_id).await?;
+    crate::fleet::reconciliation::lock_authorization(&mut tx, &headers, actor, &permissions)
+        .await?;
+    let value = crate::fleet::reconciliation::enqueue_inspection(
+        &mut tx,
+        request.operation_id,
+        request.server_id,
+        actor,
+        Some(id),
+    )
+    .await?;
+    history(&mut tx, id, Some(actor), "reconciliation_inspection_queued", json!({"server_id":request.server_id,"operation_id":request.operation_id,"inspection":value}), now_timestamp()).await?;
+    tx.commit().await?;
+    Ok(Json(value))
 }
 
 pub async fn reconcile(
@@ -377,13 +484,18 @@ pub async fn reconcile(
     Path(id): Path<Uuid>,
     Json(request): Json<Reconciliation>,
 ) -> ApiResult<Json<Value>> {
-    let ids = targets(&state.pool, id).await?;
-    let actor = authorize(&state, &headers, &ids, true).await?;
-    control_center::require_recent_proof(&state, &headers).await?;
+    let (actor, permissions) = authorize_reconciliation(
+        &state,
+        &headers,
+        id,
+        request.server_id,
+        request.operation_id,
+    )
+    .await?;
     label(&request.evidence, 4096)?;
     let now = now_timestamp();
-    if !ids.contains(&request.server_id)
-        || !request.process_stopped
+    if !request.process_stopped
+        || !request.cleanup_confirmed
         || request.observed_at > now
         || request.observed_at < now - 600
     {
@@ -392,39 +504,44 @@ pub async fn reconcile(
         ));
     }
     let mut tx = state.pool.begin().await?;
+    crate::fleet::reconciliation::lock_authorization(&mut tx, &headers, actor, &permissions)
+        .await?;
     // Match the worker's job-before-server order for manual reconciliation.
-    let state_name: String =
-        sqlx::query_scalar("SELECT status FROM operations_jobs WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !matches!(state_name.as_str(), "uncertain" | "cancel_requested") {
+    lock_uncertain_operation(&mut tx, id, request.server_id, request.operation_id).await?;
+    crate::fleet::reconciliation::lock_authorization(&mut tx, &headers, actor, &permissions)
+        .await?;
+    let now = now_timestamp();
+    if request.observed_at > now || request.observed_at < now - 600 {
         return Err(ApiError::Conflict(
-            "只有执行结果未知的任务可人工核对".into(),
+            "等待期间人工观察证据已过期，请重新核对".into(),
         ));
     }
-    let typed_unknown:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations_target_steps WHERE job_id=$1 AND server_id=$2 AND state='uncertain' AND (runtime_operation_id IS NOT NULL OR position IN (SELECT position FROM operations_panel_steps WHERE job_id=$1)))")
-        .bind(id).bind(request.server_id).fetch_one(&mut *tx).await?;
-    if typed_unknown {
-        return Err(ApiError::Conflict("签名部署须等待真实回执和配置核对；面板备份须核对实际备份进程与材料，不能使用服务器服务进程的人工确认替代".into()));
-    }
-    let _: i64 = sqlx::query_scalar("SELECT id FROM servers WHERE id=$1 FOR UPDATE")
-        .bind(request.server_id)
-        .fetch_one(&mut *tx)
-        .await?;
-    sqlx::query("UPDATE fleet_operations SET status='failed',result=$3 WHERE id IN (SELECT fleet_operation_id FROM operations_target_steps WHERE job_id=$1 AND server_id=$2 AND state IN ('uncertain','running','queued','cancel_requested')) AND status IN ('dispatched','unknown')")
-        .bind(id).bind(request.server_id).bind(json!({"manual_reconciliation":true,"succeeded":null,"evidence":request.evidence,"completed_at":now})).execute(&mut *tx).await?;
-    sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$3,result=$4 WHERE job_id=$1 AND server_id=$2 AND state IN ('uncertain','running','queued','cancel_requested')")
-        .bind(id).bind(request.server_id).bind(now).bind(json!({"manual_reconciliation":true,"success":null,"observed_at":request.observed_at,"evidence":request.evidence})).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM operations_server_locks WHERE job_id=$1 AND server_id=$2")
+    let record = crate::fleet::reconciliation::reconcile_in(
+        &mut tx,
+        request.operation_id,
+        request.server_id,
+        actor,
+        &crate::fleet::reconciliation::Conclusion {
+            inspection_id: request.inspection_id,
+            outcome: "unknown".into(),
+            conclusion: request.evidence.clone(),
+            processes_stopped: request.process_stopped,
+            cleanup_confirmed: request.cleanup_confirmed,
+        },
+        Some(id),
+    )
+    .await?;
+    sqlx::query("UPDATE operations_target_steps SET state='failed',finished_at=$4,result=$5 WHERE job_id=$1 AND server_id=$2 AND fleet_operation_id=$3 AND state='uncertain'")
+        .bind(id).bind(request.server_id).bind(request.operation_id).bind(now).bind(json!({"manual_reconciliation":record,"success":null,"observed_at":request.observed_at,"original_result":"unknown"})).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM operations_server_locks l WHERE job_id=$1 AND server_id=$2 AND NOT EXISTS(SELECT 1 FROM operations_target_steps t WHERE t.job_id=l.job_id AND t.server_id=l.server_id AND t.state IN ('queued','running','cancel_requested','uncertain'))")
         .bind(id)
         .bind(request.server_id)
         .execute(&mut *tx)
         .await?;
-    history(&mut tx,id,Some(actor),"process_stop_confirmed",json!({"server_id":request.server_id,"evidence":request.evidence,"observed_at":request.observed_at,"original_result":"unknown"}),now).await?;
+    history(&mut tx,id,Some(actor),"process_stop_confirmed",json!({"server_id":request.server_id,"operation_id":request.operation_id,"reconciliation":record,"observed_at":request.observed_at,"original_result":"unknown"}),now).await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"id":id,"server_id":request.server_id,"process_stop":"manually_confirmed","original_result":"unknown"}),
+        json!({"id":id,"server_id":request.server_id,"process_stop":"manually_confirmed","original_result":"unknown","original_receipt_preserved":true,"replayed":false}),
     ))
 }
 

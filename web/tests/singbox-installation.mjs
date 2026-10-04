@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -74,6 +75,7 @@ try {
       await route.fulfill({ json: value })
     })
 
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '服务器插件', exact: true }).getAttribute('aria-current'), 'page')
@@ -121,6 +123,7 @@ try {
 
     // The existing per-server route must use only the selected metadata endpoint.
     const beforeSingle = reads.length
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
     await page.getByRole('heading', { name: 'sing-box 安装与运行状态', exact: true }).waitFor()
     await page.getByText('已安装并运行', { exact: true }).waitFor()

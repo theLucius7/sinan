@@ -167,7 +167,34 @@ pub trait TerminalProcess: Send {
     fn close(&mut self) -> BoxFuture<'_, ()>;
 }
 
+/// An exclusive lock on an existing private state inode, released on drop.
+pub trait ManagedStateLock: Send {}
+
 pub trait Privileged: Send + Sync {
+    fn lock_managed_state<'a>(
+        &'a self,
+        _path: &'a Path,
+    ) -> BoxFuture<'a, Box<dyn ManagedStateLock>> {
+        Box::pin(async { anyhow::bail!("managed state locking is not supported") })
+    }
+    /// Capture bytes and metadata from the same ordinary file descriptor and private parents.
+    fn snapshot_managed_file<'a>(
+        &'a self,
+        _path: &'a Path,
+        _maximum: usize,
+    ) -> BoxFuture<'a, serde_json::Value> {
+        Box::pin(async { anyhow::bail!("managed file snapshots are not supported") })
+    }
+    /// Atomically replace or remove a file only while its captured identity still matches.
+    fn update_managed_file<'a>(
+        &'a self,
+        _path: &'a Path,
+        _bytes: Option<&'a [u8]>,
+        _expected: &'a serde_json::Value,
+        _metadata: &'a serde_json::Value,
+    ) -> BoxFuture<'a, serde_json::Value> {
+        Box::pin(async { anyhow::bail!("managed metadata updates are not supported") })
+    }
     fn read_managed_file<'a>(&'a self, _path: &'a Path, _maximum: usize) -> BoxFuture<'a, Vec<u8>> {
         Box::pin(async { anyhow::bail!("managed file reading is not supported") })
     }
@@ -408,6 +435,11 @@ pub trait ServiceManager: Send + Sync {
         Box::pin(async { anyhow::bail!("service log reading is not supported") })
     }
     fn supports_confirmed_cancellation(&self) -> bool {
+        false
+    }
+    /// Advertise only when this service backend can enforce a hard CPU ceiling.
+    /// Starting a diagnostic must independently verify its actual controller.
+    fn supports_diagnostic_cpu_ceiling(&self) -> bool {
         false
     }
     /// Proves that the bound diagnostic has no remaining processes or mounts.

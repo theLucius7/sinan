@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -10,6 +11,13 @@ import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
+// TEST_ONLY independent read-only view; no actual preflight or device evidence.
+const operationsViewFixture = {
+  runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
+  preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+  drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未读取进程或文件。' } },
+  changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
+}
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
   const file = resolve(root, path === '/' ? 'index.html' : `.${path}`)
@@ -48,12 +56,14 @@ try {
         const body = route.request().postDataJSON(); writes.push(body)
         if (rejected) { await route.fulfill({status:400,json:{error:'夹具：参数无效'}}); return }
         Object.assign(nodes[0],body); value=nodes[0]
-      } else if (path.endsWith('/deployments')) value = progress
+      } else if (method === 'GET' && !new URL(route.request().url()).search && path === '/api/plugins/sing-box/servers/1/operations-view') value = operationsViewFixture
+      else if (path.endsWith('/deployments')) value = progress
       else if (path.endsWith('/deployments/check')) value = { ready:false,checks:[{name:'设备在线',passed:false,detail:'设备离线，配置将在重新连接后下发'},{name:'签名运行时',passed:true,detail:'已验证匹配的制品'}] }
       else if (path.endsWith('/runtime-operations')) value = { supported:false,online:false,retiring:false,operations:[] }
       else { errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}}) }
       await route.fulfill({json:value})
     })
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
     await page.getByRole('button',{name:'创建节点',exact:true}).first().click()
     const dialog = page.getByRole('dialog')
@@ -74,7 +84,7 @@ try {
       await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR,{recursive:true})
       await page.screenshot({path:resolve(process.env.SINAN_UI_SCREENSHOT_DIR,`node-settings-${width}.png`)})
     }
-    await dialog.getByRole('button',{name:'创建并自动发布'}).click()
+    await dialog.getByRole('button',{name:'创建目标节点',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
     assert.equal(writes[0].settings.public_port,443)
     assert.equal(writes[0].settings.hysteria2.obfs_enabled,true)
@@ -82,12 +92,12 @@ try {
     assert.equal(Object.hasOwn(writes[0].settings.hysteria2,'obfs_password'),false)
     const currentRow = page.locator(width < 768 ? '.catalog-card[data-resource-key="direct:1"]' : '.catalog-table [data-resource-key="direct:1"]')
     await currentRow.getByText('proxy.example.com:443',{exact:true}).waitFor()
-    await page.getByRole('button',{name:'查看部署进度'}).click()
-    await dialog.getByText('等待合并发布',{exact:true}).waitFor()
-    await dialog.getByRole('button',{name:'检查部署条件'}).click()
+    await page.getByRole('button',{name:'查看差异、完整预检与发布状态',exact:true}).click()
+    await dialog.getByText('目标配置待发布',{exact:true}).waitFor()
+    await dialog.getByRole('button',{name:'检查基础安装条件',exact:true}).click()
     await dialog.getByText('设备离线，配置将在重新连接后下发',{exact:true}).waitFor()
     Object.assign(progress,{pending:false,status:{target_rev:2,applied_rev:1,last_result_rev:2,healthy:true,last_error:'测试校验失败',updated_at:1}})
-    await dialog.getByRole('button',{name:'刷新',exact:true}).click()
+    await dialog.locator('.node-deployment > .node-deployment-heading').getByRole('button',{name:'刷新',exact:true}).click()
     await dialog.getByText('最新配置应用失败',{exact:true}).waitFor()
     assert.equal(await dialog.getByText('目标配置已应用',{exact:true}).count(),0)
     await dialog.getByRole('button',{name:'关闭',exact:true}).click()
@@ -95,11 +105,11 @@ try {
     await dialog.locator('[name=enabled]').uncheck()
     await dialog.locator('[name=public_port]').fill('')
     rejected=true
-    await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+    await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
     await dialog.getByRole('alert').getByText('夹具：参数无效').waitFor()
     assert.equal(await dialog.locator('[name=enabled]').isChecked(),false)
     rejected=false
-    await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+    await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
     assert.equal(writes.at(-1).enabled,false)
     assert.equal(writes.at(-1).settings.public_port,null)

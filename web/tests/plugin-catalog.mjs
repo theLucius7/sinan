@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -51,6 +52,7 @@ try {
         reads.push(path)
         if (path === '/api/dashboard/access') value = { authenticated: true, public_dashboard: false }
         else if (path === '/api/me') value = { authenticated: true }
+        else if (path === '/api/plugins/ddns/accounts') value = []
         else if (path === '/api/plugins/ddns/rules') value = []
         else if (path === '/api/plugins/ddns/servers') value = [{ id: 2, name: 'DDNS 测试服务器', online: true, enabled: false }]
         else if (path === '/api/artifacts') {
@@ -74,6 +76,7 @@ try {
     const cards = page.locator('[data-catalog-plugin]')
     const singbox = page.locator('[data-catalog-plugin="sing-box"]')
     const openCatalog = async (path = '/plugins/catalog') => {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#${path}`)
       await page.getByRole('heading', { name: '插件目录', exact: true }).waitFor()
       await page.getByText('有已验证下载包', { exact: true }).first().waitFor()
@@ -92,7 +95,7 @@ try {
     assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '插件目录' }).getAttribute('aria-current'), 'page')
     assert.equal(await page.title(), '插件目录 · 司南')
     assert.equal(await page.getByRole('link', { name: '制品', exact: true }).count(), 0)
-    assert.equal(await page.locator('form, input').count(), 0)
+    assert.equal(await page.locator('.catalog-grid, .catalog-unknown').locator('form, input').count(), 0)
     assert.equal(await page.getByRole('button', { name: /导入|安装/ }).count(), 0)
     assert.equal(await page.getByRole('heading', { name: '服务器 Agent', exact: true }).count(), 1)
     assert.equal(await page.getByRole('heading', { name: 'custom-component', exact: true }).count(), 1)

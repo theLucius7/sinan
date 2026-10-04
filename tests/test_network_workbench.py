@@ -1,10 +1,14 @@
-"""Isolated contract tests; no network, real tool execution or resource load."""
+"""Isolated contracts and owned fixture processes; no real tools or host load."""
 import importlib.util
 import json
+import os
+import signal
+import time
 from pathlib import Path
 import socket
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -35,6 +39,209 @@ class NetworkWorkbenchContracts(unittest.TestCase):
                  'target': {'host': '192.0.2.1', 'authorization': 'fixture'}}
         WORKBENCH.EXECUTION = value
         return value
+
+    def test_bounded_pipe_captures_a_fast_exiting_child_and_reaps_overflow(self):
+        self.execution({'kind': 'cpu'})
+        actual = subprocess.Popen
+        owned = []
+        def launch(*args, **kwargs):
+            process = actual(*args, **kwargs)
+            owned.append(process)
+            return process
+        try:
+            with patch.object(WORKBENCH, 'resource_protection', return_value={}), \
+                    patch.object(WORKBENCH.subprocess, 'Popen', side_effect=launch):
+                code, output, _ = WORKBENCH.command([sys.executable, '-c', 'print("TEST_ONLY pipe")'], 3)
+                self.assertEqual(code, 0)
+                self.assertEqual(output, 'TEST_ONLY pipe\n')
+                self.assertIsNone(WORKBENCH.PROCESS)
+                with self.assertRaises(ValueError) as rejected:
+                    WORKBENCH.command([sys.executable, '-c', 'import sys; sys.stdout.write("x" * 131072)'], 3)
+                error = rejected.exception
+                while error is not None and 'output exceeds' not in str(error):
+                    error = error.__context__
+                self.assertIsNotNone(error, 'original output-limit rejection must remain recorded')
+                if WORKBENCH.PROCESS is not None:
+                    self.assertIs(WORKBENCH.PROCESS, owned[-1])
+                    self.assertRegex(str(rejected.exception), 'cleanup is unconfirmed')
+        finally:
+            # These two known fixture scripts never fork. Reap only their direct
+            # Popen children; clearing this test module is isolation, not a
+            # production process-group cleanup claim when group probing is denied.
+            for process in owned:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=2)
+            if any(WORKBENCH.PROCESS is process for process in owned):
+                WORKBENCH.PROCESS = None
+
+    def test_exited_leader_with_live_pipe_descendant_still_reaps_the_owned_group(self):
+        self.execution({'kind': 'cpu'})
+        actual = subprocess.Popen
+        launched = []
+        def launch(*args, **kwargs):
+            process = actual(*args, **kwargs)
+            launched.append(process)
+            return process
+        code = ('import os,signal,time; pid=os.fork(); '
+                'os._exit(0) if pid else None; '
+                'signal.signal(signal.SIGTERM,signal.SIG_IGN); time.sleep(3.5)')
+        with patch.object(WORKBENCH, 'resource_protection', return_value={}), \
+                patch.object(WORKBENCH.subprocess, 'Popen', side_effect=launch):
+            started = time.monotonic()
+            try:
+                with self.assertRaisesRegex(ValueError, 'timeout|cleanup is unconfirmed'):
+                    WORKBENCH.command([sys.executable, '-c', code], 0.3)
+                self.assertLess(time.monotonic() - started, 5)
+                self.assertEqual(launched[0].returncode, 0)
+                if WORKBENCH.PROCESS is None:
+                    with self.assertRaises(ProcessLookupError):
+                        os.killpg(launched[0].pid, 0)
+                else:
+                    self.assertIs(WORKBENCH.PROCESS, launched[0])
+            finally:
+                try:
+                    os.killpg(launched[0].pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                WORKBENCH.PROCESS = None
+
+    def test_group_cleanup_failure_retains_the_original_identity(self):
+        process = Mock(pid=123456, stdout=None)
+        WORKBENCH.PROCESS = process
+        ticks = iter([0, 3, 0, 3])
+        try:
+            with patch.object(WORKBENCH.os, 'killpg'), \
+                    patch.object(WORKBENCH.time, 'monotonic', side_effect=lambda: next(ticks)):
+                with self.assertRaisesRegex(ValueError, 'cleanup is unconfirmed'):
+                    WORKBENCH.reap_process_group()
+            self.assertIs(WORKBENCH.PROCESS, process)
+        finally:
+            WORKBENCH.PROCESS = None
+
+    def test_permission_denied_probe_is_rechecked_until_actual_group_disappears(self):
+        process = Mock(pid=123456, stdout=None)
+        WORKBENCH.PROCESS = process
+        probes = []
+        def observe(pid, sent):
+            self.assertEqual(pid, process.pid)
+            if sent == 0:
+                probes.append(sent)
+                if len(probes) == 2:
+                    raise ProcessLookupError('TEST_ONLY group actually gone')
+                raise PermissionError('TEST_ONLY group observation denied')
+        try:
+            with patch.object(WORKBENCH.os, 'killpg', side_effect=observe), \
+                    patch.object(WORKBENCH.time, 'sleep'):
+                WORKBENCH.reap_process_group()
+            self.assertEqual(len(probes), 2)
+            process.wait.assert_called_once_with(timeout=2)
+            self.assertIsNone(WORKBENCH.PROCESS)
+        finally:
+            WORKBENCH.PROCESS = None
+
+    def test_persistent_permission_denial_is_bounded_and_keeps_cleanup_identity(self):
+        process = Mock(pid=123456, stdout=None)
+        WORKBENCH.PROCESS = process
+        ticks = iter([0, 0, 3, 0, 0, 3])
+        try:
+            with patch.object(WORKBENCH.os, 'killpg', side_effect=PermissionError('TEST_ONLY denied')) as observe, \
+                    patch.object(WORKBENCH.time, 'monotonic', side_effect=lambda: next(ticks)), \
+                    patch.object(WORKBENCH.time, 'sleep'):
+                with self.assertRaisesRegex(ValueError, 'cleanup is unconfirmed'):
+                    WORKBENCH.reap_process_group()
+            self.assertEqual([call.args[1] for call in observe.call_args_list],
+                             [signal.SIGTERM, 0, signal.SIGKILL, 0])
+            process.wait.assert_not_called()
+            self.assertIs(WORKBENCH.PROCESS, process)
+        finally:
+            WORKBENCH.PROCESS = None
+
+    def test_cancel_signal_permission_denial_retains_identity_for_bounded_reaper(self):
+        process = Mock(pid=123456, stdout=None)
+        WORKBENCH.PROCESS = process
+        try:
+            with patch.object(WORKBENCH.os, 'killpg', side_effect=PermissionError('TEST_ONLY denied')):
+                WORKBENCH.stop()
+            self.assertTrue(WORKBENCH.CANCELLED)
+            self.assertIs(WORKBENCH.PROCESS, process)
+        finally:
+            WORKBENCH.PROCESS = None
+
+    def test_load_latency_refuses_missing_or_expired_exact_snapshot_before_dns(self):
+        self.execution({'kind': 'throughput', 'latency_target': 'example.com', 'family': 'ipv4'})
+        for frozen in (None, {'id': 'fixture', 'host': 'example.com', 'authorization': 'fixture',
+                               'authorized_until': 1}):
+            WORKBENCH.EXECUTION['latency_target'] = frozen
+            with patch.object(WORKBENCH, 'addresses') as resolve:
+                with self.assertRaisesRegex(ValueError, 'identity|expired'):
+                    WORKBENCH.latency(WORKBENCH.EXECUTION['check'])
+                resolve.assert_not_called()
+
+    def test_resolution_and_total_deadline_recheck_frozen_authorization(self):
+        self.execution({'kind': 'tcp', 'family': 'ipv4'})
+        with patch.object(WORKBENCH.time, 'time', return_value=100):
+            WORKBENCH.EXECUTION['target']['authorized_until'] = 110
+            self.assertEqual(WORKBENCH.execution_seconds(WORKBENCH.EXECUTION), 10)
+            WORKBENCH.EXECUTION['latency_target'] = {'authorized_until': 105}
+            self.assertEqual(WORKBENCH.execution_seconds(WORKBENCH.EXECUTION), 5)
+        def resolved(*args):
+            WORKBENCH.EXECUTION['target']['authorized_until'] = 0
+            return [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('192.0.2.1', 443))]
+        with patch.object(WORKBENCH.socket, 'getaddrinfo', side_effect=resolved):
+            with self.assertRaisesRegex(ValueError, 'expired'):
+                WORKBENCH.addresses('192.0.2.1', 443, WORKBENCH.EXECUTION['check'])
+
+    def test_disk_scratch_over_report_limit_is_unlinked_before_truncate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = str(Path(temporary).resolve())
+            check = {'kind': 'disk', 'tool_version': '3.36', 'directory': directory,
+                     'file_bytes': 2 * 1024 * 1024, 'block_bytes': 4096,
+                     'queue_depth': 1, 'mode': 'write', 'read_percent': 0,
+                     'duration_secs': 1}
+            value = self.execution(check)
+            value['budget']['disk_bytes'] = check['file_bytes']
+            WORKBENCH.MANIFEST = {'allowed_test_directories': [directory]}
+            self.assertEqual(WORKBENCH.file_size_limit(value), check['file_bytes'])
+            original = os.ftruncate
+            def truncate(descriptor, size):
+                self.assertEqual(list(Path(directory).iterdir()), [])
+                self.assertIn(descriptor, WORKBENCH.FILE_FDS)
+                original(descriptor, size)
+            free = Mock(f_bavail=4 * 1024 ** 3, f_frsize=1)
+            with patch.object(WORKBENCH, 'supplied_tool', return_value='/fixture/fio'), \
+                    patch.object(WORKBENCH.os, 'statvfs', return_value=free), \
+                    patch.object(WORKBENCH.os, 'ftruncate', side_effect=truncate), \
+                    patch.object(WORKBENCH, 'command', return_value=(0, '{}', [])):
+                WORKBENCH.external(check)
+            self.assertEqual(os.fstat(WORKBENCH.FILE_FDS[0]).st_size, check['file_bytes'])
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_disk_truncate_failure_leaves_only_registered_unlinked_fd(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = str(Path(temporary).resolve())
+            check = {'kind': 'disk', 'tool_version': '3.36', 'directory': directory,
+                     'file_bytes': 1024 * 1024}
+            self.execution(check)
+            WORKBENCH.MANIFEST = {'allowed_test_directories': [directory]}
+            free = Mock(f_bavail=4 * 1024 ** 3, f_frsize=1)
+            with patch.object(WORKBENCH, 'supplied_tool', return_value='/fixture/fio'), \
+                    patch.object(WORKBENCH.os, 'statvfs', return_value=free), \
+                    patch.object(WORKBENCH.os, 'ftruncate', side_effect=OSError('fixture truncate')):
+                with self.assertRaisesRegex(OSError, 'fixture truncate'):
+                    WORKBENCH.external(check)
+            self.assertEqual(len(WORKBENCH.FILE_FDS), 1)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_disk_scratch_limit_refuses_missing_or_excessive_budget(self):
+        for size, budget in ((1024, 0), (2048, 1024), (9 * 1024 ** 3, 9 * 1024 ** 3),
+                             (True, 1024)):
+            with self.subTest(size=size, budget=budget):
+                with self.assertRaisesRegex(ValueError, 'scratch size'):
+                    WORKBENCH.file_size_limit({'check': {'kind': 'disk', 'file_bytes': size},
+                                               'budget': {'disk_bytes': budget}})
+        self.assertEqual(WORKBENCH.file_size_limit({'check': {'kind': 'tcp'}}),
+                         WORKBENCH.LIMIT * 4)
 
     def test_stability_zero_cpu_workers_does_not_mean_all_processors(self):
         check = {'kind': 'stability', 'tool_version': '0.17.0', 'duration_secs': 10,
@@ -180,6 +387,7 @@ class NetworkWorkbenchContracts(unittest.TestCase):
 
     def test_disk_outside_allowlist_rejects_before_creating_test_file(self):
         with tempfile.TemporaryDirectory() as directory:
+            directory = str(Path(directory).resolve())
             check = {'kind': 'disk', 'tool_version': '3.38', 'directory': directory}
             self.execution(check)
             with patch.object(WORKBENCH, 'supplied_tool', return_value='/fixture/fio'), \
@@ -190,6 +398,7 @@ class NetworkWorkbenchContracts(unittest.TestCase):
 
     def test_disk_uses_small_anonymous_owned_file_and_keeps_fio_parameters(self):
         with tempfile.TemporaryDirectory() as directory:
+            directory = str(Path(directory).resolve())
             check = {'kind': 'disk', 'tool_version': '3.38', 'directory': directory, 'file_bytes': 4096,
                      'block_bytes': 512, 'queue_depth': 2, 'mode': 'randrw', 'read_percent': 75, 'duration_secs': 1}
             self.execution(check)

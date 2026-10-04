@@ -43,6 +43,8 @@ pub async fn create(
     }
     let session_hash = auth::security::session_hash(&headers)?;
     let mut tx = state.pool.begin().await?;
+    lock_interactive_actor(&mut tx, server, admin, &session_hash, "terminal:write").await?;
+    lock_recent_proof(&mut tx, &session_hash).await?;
     super::ensure_accepts_tasks_tx(&mut tx, server).await?;
     let cap: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
         .bind(server)
@@ -103,6 +105,89 @@ async fn authorize(state: &AppState, headers: &HeaderMap, id: Uuid, cap: &str) -
     crate::control_center::require_server(state, headers, server, cap).await?;
     Ok(server)
 }
+
+async fn authorize_interactive(
+    state: &AppState,
+    headers: &HeaderMap,
+    id: Uuid,
+    capability: &str,
+) -> ApiResult<(i64, i64, String)> {
+    let actor = crate::control_center::authenticate(state, headers).await?;
+    if actor.token_id.is_some() {
+        return Err(ApiError::Forbidden(
+            "终端输入和输出需要创建会话的管理员登录会话".into(),
+        ));
+    }
+    let hash = auth::security::session_hash(headers)?;
+    let row = sqlx::query(
+        "SELECT server_id,admin_id,admin_session_hash FROM fleet_terminal_sessions WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let server: i64 = row.get("server_id");
+    if !actor.allows(capability)
+        || !actor.allows_server(server)
+        || actor.admin_id != row.get::<i64, _>("admin_id")
+        || hash != row.get::<String, _>("admin_session_hash")
+    {
+        return Err(ApiError::Forbidden(
+            "只有创建终端的管理员登录会话可以读取输出或发送输入".into(),
+        ));
+    }
+    Ok((server, actor.admin_id, hash))
+}
+
+async fn lock_interactive_actor(
+    tx: &mut Transaction<'_, Postgres>,
+    server: i64,
+    admin: i64,
+    hash: &str,
+    capability: &str,
+) -> ApiResult<()> {
+    // Pin authorization before server/session locks. NOWAIT prevents waiting
+    // for reauthentication, which may acquire these rows in the reverse order.
+    let profile = authorization_lock(sqlx::query("SELECT role,all_servers,capabilities FROM administrator_profiles WHERE admin_id=$1 AND enabled FOR SHARE NOWAIT")
+        .bind(admin).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    authorization_lock(sqlx::query("SELECT token_hash FROM sessions WHERE token_hash=$1 AND admin_id=$2 AND expires_at>$3 FOR SHARE NOWAIT")
+        .bind(hash).bind(admin).bind(now_timestamp()).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    let role: String = profile.get("role");
+    let capabilities: Value = profile.get("capabilities");
+    let granted: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM administrator_server_grants WHERE admin_id=$1 AND server_id=$2)")
+        .bind(admin).bind(server).fetch_one(&mut **tx).await?;
+    if (role != "owner"
+        && !capabilities
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability))))
+        || (role == "viewer" && capability.ends_with(":write"))
+        || (!profile.get::<bool, _>("all_servers") && !granted)
+    {
+        return Err(ApiError::Forbidden("管理员已失去此服务器终端权限".into()));
+    }
+    Ok(())
+}
+
+fn authorization_lock<T>(result: Result<T, sqlx::Error>) -> ApiResult<T> {
+    result.map_err(|error| {
+        if error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref()
+            == Some("55P03")
+        {
+            ApiError::Conflict("管理员会话、授权或再次验证正在变更，请刷新后重新核对".into())
+        } else {
+            error.into()
+        }
+    })
+}
+
+async fn lock_recent_proof(tx: &mut Transaction<'_, Postgres>, hash: &str) -> ApiResult<()> {
+    authorization_lock(sqlx::query("SELECT session_hash FROM administrator_reauth WHERE session_hash=$1 AND expires_at>$2 FOR SHARE NOWAIT")
+        .bind(hash).bind(now_timestamp()).fetch_optional(&mut **tx).await)?.ok_or_else(||ApiError::Forbidden("终端输入需要当前登录会话的有效再次验证".into()))?;
+    Ok(())
+}
 #[derive(Deserialize)]
 pub struct Cursor {
     #[serde(default)]
@@ -114,9 +199,13 @@ pub async fn get(
     Path(id): Path<Uuid>,
     Query(cursor): Query<Cursor>,
 ) -> ApiResult<Json<Value>> {
-    authorize(&state, &headers, id, "terminal:read").await?;
-    let session:Value=sqlx::query_scalar("SELECT to_jsonb(s)-'policy'-'admin_session_hash' FROM fleet_terminal_sessions s WHERE id=$1").bind(id).fetch_one(&state.pool).await?;
-    let output:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('sequence',sequence,'data',data) FROM fleet_terminal_outputs WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT 64").bind(id).bind(cursor.after).fetch_all(&state.pool).await?;
+    let (server, admin, hash) =
+        authorize_interactive(&state, &headers, id, "terminal:read").await?;
+    let mut tx = state.pool.begin().await?;
+    lock_interactive_actor(&mut tx, server, admin, &hash, "terminal:read").await?;
+    let session:Value=sqlx::query_scalar("SELECT to_jsonb(s)-'policy'-'admin_session_hash' FROM fleet_terminal_sessions s WHERE id=$1 AND admin_id=$2 AND admin_session_hash=$3").bind(id).bind(admin).bind(&hash).fetch_one(&mut *tx).await?;
+    let output:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('sequence',sequence,'data',data) FROM fleet_terminal_outputs WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT 64").bind(id).bind(cursor.after).fetch_all(&mut *tx).await?;
+    tx.commit().await?;
     Ok(Json(json!({"session":session,"output":output})))
 }
 
@@ -133,7 +222,9 @@ pub async fn input(
     Path(id): Path<Uuid>,
     Json(input): Json<Input>,
 ) -> ApiResult<Json<Value>> {
-    let server = authorize(&state, &headers, id, "terminal:write").await?;
+    let (server, admin, hash) =
+        authorize_interactive(&state, &headers, id, "terminal:write").await?;
+    crate::control_center::require_recent_proof(&state, &headers).await?;
     if input.data.len() > 8192
         || input.columns.is_some() != input.rows.is_some()
         || input
@@ -144,9 +235,41 @@ pub async fn input(
         return Err(ApiError::BadRequest("输入超过 8 KiB 或窗口尺寸无效".into()));
     }
     let mut tx = state.pool.begin().await?;
+    lock_interactive_actor(&mut tx, server, admin, &hash, "terminal:write").await?;
+    lock_recent_proof(&mut tx, &hash).await?;
     super::ensure_terminal_input_tx(&mut tx, server).await?;
-    let row=sqlx::query("UPDATE fleet_terminal_sessions SET input_sequence=input_sequence+1,last_input_at=$2 WHERE id=$1 AND NOT close_requested AND status IN ('queued','running') AND expires_at>$2 RETURNING input_sequence")
-        .bind(id).bind(now_timestamp()).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::Conflict("终端已关闭或超时".into()))?;
+    let capabilities: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
+        .bind(server)
+        .fetch_one(&mut *tx)
+        .await?;
+    if !capabilities.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item.as_str() == Some(TERMINAL_CAPABILITY))
+    }) {
+        return Err(ApiError::Conflict(
+            "Agent 当前不具备终端能力；仍可请求强制关闭".into(),
+        ));
+    }
+    let row=sqlx::query("SELECT account,policy FROM fleet_terminal_sessions WHERE id=$1 AND admin_id=$2 AND admin_session_hash=$3 AND NOT close_requested AND status IN ('queued','running') AND expires_at>$4 FOR UPDATE")
+        .bind(id).bind(admin).bind(&hash).bind(now_timestamp()).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::Conflict("终端已关闭或超时".into()))?;
+    let account: String = row.get("account");
+    let original: sinan_protocol::fleet::AccessPolicy =
+        serde_json::from_value(row.get("policy")).map_err(anyhow::Error::from)?;
+    let current = super::policy(&mut tx, server).await?;
+    if !original.terminal_accounts.contains(&account)
+        || !current.terminal_accounts.contains(&account)
+    {
+        return Err(ApiError::Conflict(
+            "终端执行账号已失去服务器授权；仍可请求强制关闭".into(),
+        ));
+    }
+    // Eligibility rows remain pinned, but their deadlines can elapse while
+    // waiting for the server or terminal row. Recheck immediately before input.
+    lock_interactive_actor(&mut tx, server, admin, &hash, "terminal:write").await?;
+    lock_recent_proof(&mut tx, &hash).await?;
+    let row=sqlx::query("UPDATE fleet_terminal_sessions SET input_sequence=input_sequence+1,last_input_at=$2 WHERE id=$1 RETURNING input_sequence")
+        .bind(id).bind(now_timestamp()).fetch_one(&mut *tx).await?;
     let sequence: i64 = row.get("input_sequence");
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM fleet_terminal_inputs WHERE session_id=$1")

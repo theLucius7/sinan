@@ -1,9 +1,17 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+
+// TEST_ONLY read-only resources; no device execution or secret template content is claimed.
+const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
+  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+  limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 // Serve the actual built dist; all business requests use private API fixtures.
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
@@ -26,6 +34,8 @@ try {
     const page = await browser.newPage({ viewport: { width, height: 1000 } })
     const errors = [], writes = [], policyReads = [], usageReads = [], mutations = [], groupWrites = [], userWrites = [], accessWrites = []
     const failures = new Set(), heldReads = new Map(), directIds = new Set()
+    const previews = [], applications = [], operationSnapshots = new Map()
+    let previewSequence = 0, operationRevision = 0, heldPreview = null
     const prefix = '/api/plugins/sing-box'
     let groupIds = [1], packageId = 1
     let chainEntries = []
@@ -46,6 +56,8 @@ try {
     }
     const user = { id: 1, name: '测试代理用户', subscription_token: 'TEST_ONLY', subscription_url: 'https://panel.example.com/s/TEST_ONLY' }
     const usage = { uplink: '10', downlink: '20', total: '30', by_user: [{ user_id: 1, name: user.name, deleted: false, uplink: '10', downlink: '20' }], by_node: [] }
+    const ledger = JSON.stringify(usage)
+    const operationState = () => JSON.stringify({ operationRevision, groupIds, packageId, policies, packages, nodes, chainEntries, user, usage })
     const entitlement = () => ({
       user_id: 1, package_group_id: packageId, package_name: packages.find(p => p.id === packageId).name,
       ...packages.find(p => p.id === packageId), starts_at: 1790812800, expires_at: 1795996800,
@@ -101,11 +113,23 @@ try {
         props.onClick()
       })
       await page.waitForTimeout(75)
-      assert.equal(mutations.length, count, 'stale and pending assignment callbacks must send zero PUTs')
+      assert.equal(mutations.length, count, 'stale and pending assignment callbacks must send zero preview or apply requests')
+    }
+    const reviewDialog = operation => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: operation === 'policy_batch' ? '策略组分配预览' : '套餐更换预览', exact: true }) })
+    const assertUnconfirmed = async review => {
+      const apply = review.getByRole('button', { name: '确认应用', exact: true })
+      assert.equal(await apply.isDisabled(), true)
+      const count = applications.length
+      await apply.evaluate(button => { const disabled = button.disabled; try { button.disabled = false; button.click() } finally { button.disabled = disabled } })
+      assert.equal(applications.length, count, 'a forced callback cannot apply an unconfirmed or pending preview')
+    }
+    const confirmReview = async review => {
+      await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).check()
+      await review.getByRole('button', { name: '确认应用', exact: true }).click()
     }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
-      const request = route.request(), pathname = new URL(request.url()).pathname, method = request.method()
+      const request = route.request(), url = new URL(request.url()), pathname = url.pathname, method = request.method()
       if (method !== 'GET') mutations.push({ pathname, method, payload: request.postDataJSON() })
       if (method === 'GET' && failures.has(pathname)) { await route.fulfill({ status: 500, json: { error: `夹具读取失败：${pathname}` } }); return }
       if (method === 'GET' && heldReads.has(pathname)) {
@@ -116,6 +140,8 @@ try {
       if (pathname === '/api/dashboard/access' && method === 'GET') value = { authenticated: true, public_dashboard: false }
       else if (pathname === '/api/me' && method === 'GET') value = { authenticated: true }
       else if (pathname === `${prefix}/users/1/portal` && method === 'GET') value = { configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (pathname === `${prefix}/users/1/diagnosis` && method === 'GET' && !url.search) value = diagnosisFixture(user)
+      else if (pathname === `${prefix}/users/1/client-template` && method === 'GET' && !url.search) value = templateFixture
       else if (pathname === `${prefix}/users` && method === 'GET') value = [user]
       else if (pathname === `${prefix}/users/1` && method === 'PATCH') {
         const payload = request.postDataJSON()
@@ -154,12 +180,7 @@ try {
         directIds.add(1); accessWrites.push(payload); value = { user_id: 1, node_id: 1, uuid: 'TEST_ONLY', stat_name: 'fixture_1', direct_grant: true }
       }
       else if (pathname === `${prefix}/users/1/policy-groups` && method === 'GET') { policyReads.push([...groupIds]); value = { group_ids: [...groupIds] } }
-      else if (pathname === `${prefix}/users/1/policy-groups` && method === 'PUT') {
-        const payload = request.postDataJSON()
-        assert.deepEqual(payload, { group_ids: [2] })
-        writes.push({ pathname, method, payload })
-        groupIds = [...payload.group_ids]; value = { group_ids: [...groupIds] }
-      } else if (pathname === `${prefix}/users/1/entitlement` && method === 'GET') value = entitlement()
+      else if (pathname === `${prefix}/users/1/entitlement` && method === 'GET') value = entitlement()
       else if (pathname === `${prefix}/users/1/subscription` && method === 'GET') {
         const format = new URL(request.url()).searchParams.get('format')
         assert(['singbox', 'links'].includes(format))
@@ -172,12 +193,29 @@ try {
           content_type: format === 'singbox' ? 'application/json' : 'text/plain', entitlement: entitlement(),
         }
       }
-      else if (pathname === `${prefix}/users/1/package` && method === 'POST') {
+      else if (pathname === `${prefix}/operations/preview` && method === 'POST') {
         const payload = request.postDataJSON()
-        assert.equal(payload.package_group_id, 2)
-        assert.match(payload.request_id, /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
-        writes.push({ pathname, method, payload })
-        packageId = 2; value = entitlement()
+        assert(['policy_batch', 'replace_package'].includes(payload.operation))
+        if (payload.operation === 'policy_batch') assert.deepEqual(payload, { operation: 'policy_batch', user_ids: [1], group_ids: [2] })
+        else assert.deepEqual(payload, { operation: 'replace_package', user_id: 1, package_group_id: 2 })
+        const id = `00000000-0000-4000-8000-${String(++previewSequence).padStart(12, '0')}`
+        const fixed = { id, request: structuredClone(payload), state: operationState() }
+        previews.push(fixed); operationSnapshots.set(id, fixed)
+        const gate = heldPreview; heldPreview = null
+        if (gate) { gate.enter(); await gate.released }
+        value = { id, expires_at: Math.floor(Date.now() / 1000) + 300, summary: payload.operation === 'policy_batch'
+          ? { effect: 'TEST_ONLY 固定策略范围，历史账本与单独授权保留', users: [{ id: 1, name: user.name }], differences: [{ user_id: 1, added_nodes: [2], removed_nodes: [1], effective_nodes: [2] }] }
+          : { effect: 'TEST_ONLY 更换固定套餐，历史用量保留', plan: packages[1], new_cycle: { cycle_start: 1790812800, next_reset: 1793491200, used_bytes: usage.total } } }
+      } else if (new RegExp(`^${prefix}/operations/[^/]+/apply$`).test(pathname) && method === 'POST') {
+        const payload = request.postDataJSON(), fixed = operationSnapshots.get(pathname.split('/').at(-2))
+        assert.deepEqual(payload, { confirm: true }); assert(fixed, 'apply must bind an existing exact preview')
+        applications.push({ pathname, method, payload, request: fixed.request })
+        if (fixed.state !== operationState()) { await route.fulfill({ status: 409, json: { error: 'TEST_ONLY 固定预览版本冲突，请重新预览' } }); return }
+        assert.equal(JSON.stringify(usage), ledger, 'preview and apply must preserve the full original ledger')
+        writes.push({ pathname, method, payload, request: fixed.request })
+        if (fixed.request.operation === 'policy_batch') groupIds = [...fixed.request.group_ids]
+        else packageId = fixed.request.package_group_id
+        operationSnapshots.delete(fixed.id); value = { applied: true }
       } else {
         errors.push(`Unexpected API: ${method} ${pathname}`)
         await route.fulfill({ status: 404, json: { error: '测试拒绝未知接口' } }); return
@@ -185,6 +223,7 @@ try {
       await route.fulfill({ json: value })
     })
 
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/users`)
     await page.getByRole('heading', { name: '可用范围与套餐', exact: true }).waitFor()
     const previous = page.getByRole('checkbox', { name: /原策略/ })
@@ -225,9 +264,41 @@ try {
     await enabled(savePolicies)
     assert.equal(await previous.isChecked(), false, 'successful explicit refresh must preserve the unsaved draft')
     assert.equal(await next.isChecked(), true)
-    // Assigned snapshots intentionally do not poll; only the real save readback reloads them.
-    await failedRead(`${prefix}/users/1/policy-groups`, () => savePolicies.click())
-    await page.getByText('策略组分配已保存。单独授权仍保留，设备应用配置后更新可用节点。', { exact: true }).waitFor()
+    // Preview itself must remain read-only; its pending/unchecked callback cannot apply.
+    let entered, releasePreview
+    const previewArrived = new Promise(resolve => { entered = resolve })
+    const previewReleased = new Promise(resolve => { releasePreview = resolve })
+    heldPreview = { enter: entered, released: previewReleased }
+    await savePolicies.click()
+    await previewArrived
+    let review = reviewDialog('policy_batch')
+    await review.waitFor()
+    try {
+      await assertUnconfirmed(review)
+      assert.equal(writes.length, 0); assert.deepEqual(groupIds, [1]); assert.equal(JSON.stringify(usage), ledger)
+    } finally { releasePreview() }
+    await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
+    await assertUnconfirmed(review)
+    await review.getByRole('button', { name: '返回草稿', exact: true }).click()
+    await review.waitFor({ state: 'hidden' })
+    assert.equal(await previous.isChecked(), false); assert.equal(await next.isChecked(), true)
+    assert.equal(writes.length, 0, 'returning from a fixed preview preserves the unsaved policy draft')
+    await savePolicies.click()
+    review = reviewDialog('policy_batch')
+    await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
+    ++operationRevision
+    await confirmReview(review)
+    await review.getByRole('alert').filter({ hasText: '固定预览版本冲突' }).waitFor()
+    assert.equal(writes.length, 0); assert.deepEqual(groupIds, [1]); assert.equal(JSON.stringify(usage), ledger)
+    const freshPreview = page.waitForResponse(response => new URL(response.url()).pathname === `${prefix}/operations/preview` && response.request().method() === 'POST' && response.status() === 200)
+    await review.getByRole('button', { name: '重新预览', exact: true }).click()
+    await freshPreview
+    await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
+    assert.equal(await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).isChecked(), false)
+    await assertUnconfirmed(review)
+    // Assigned snapshots intentionally do not poll; only confirmed apply reloads them.
+    await failedRead(`${prefix}/users/1/policy-groups`, () => confirmReview(review))
+    await page.getByText('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。', { exact: true }).waitFor()
     assert.equal(await savePolicies.isDisabled(), true)
     assert.equal(await previous.isChecked(), false)
     assert.equal(await next.isChecked(), true)
@@ -241,7 +312,10 @@ try {
     assert.equal(await previous.isChecked(), false)
     assert.equal(await next.isChecked(), true)
     assert.deepEqual(await (await readback).json(), { group_ids: [2] })
-    assert.deepEqual(writes.filter(w => w.pathname.endsWith('/policy-groups')), [{ pathname: `${prefix}/users/1/policy-groups`, method: 'PUT', payload: { group_ids: [2] } }])
+    assert.equal(writes.length, 1)
+    assert.deepEqual(writes[0].request, { operation: 'policy_batch', user_ids: [1], group_ids: [2] })
+    assert.deepEqual(writes[0].payload, { confirm: true })
+    assert.equal(applications.length, 2, 'one stale fixed apply was refused before the one successful apply')
     assert(policyReads.length > readCount, 'saving must explicitly reload authoritative assignments')
     assert.deepEqual(policyReads.at(-1), [2])
     assert.equal(await previous.isChecked(), false)
@@ -265,10 +339,24 @@ try {
       assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2')
     })
     await page.getByRole('button', { name: '确认分配', exact: true }).click()
-    await page.getByText('套餐已分配，按分配时刻计算有效期。本期历史用量没有清空。', { exact: true }).waitFor()
+    review = reviewDialog('replace_package')
+    await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
+    await assertUnconfirmed(review)
+    assert.equal(packageId, 1); assert.equal(writes.length, 1); assert.equal(JSON.stringify(usage), ledger)
+    await review.getByRole('button', { name: '返回草稿', exact: true }).click()
+    await review.waitFor({ state: 'hidden' })
+    assert.equal(await dialog.locator('select[name="package_group_id"]').inputValue(), '2', 'returning to the package editor preserves its explicit selected target')
+    await dialog.getByRole('button', { name: '确认分配', exact: true }).click()
+    review = reviewDialog('replace_package')
+    await review.getByRole('checkbox', { name: '已核对目标与影响，确认执行', exact: true }).waitFor()
+    await confirmReview(review)
+    await review.waitFor({ state: 'hidden' })
+    await page.getByText('变更已确认保存；历史账本保留，请继续查看设备应用与订阅状态。', { exact: true }).waitFor()
     await page.getByText('新套餐', { exact: true }).waitFor()
     assert.equal(packageId, 2)
-    assert.equal(writes.filter(w => w.pathname.endsWith('/package')).length, 1)
+    assert.deepEqual(writes[1].request, { operation: 'replace_package', user_id: 1, package_group_id: 2 })
+    assert.equal(writes.filter(w => w.request.operation === 'replace_package').length, 1)
+    assert.equal(JSON.stringify(usage), ledger)
     await page.getByRole('button', { name: '订阅链接', exact: true }).click()
     assert.equal(await page.getByRole('combobox', { name: '订阅格式', exact: true }).inputValue(), 'singbox')
     await page.getByRole('dialog').getByText('可以获取', { exact: true }).waitFor()
@@ -434,11 +522,14 @@ try {
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.equal(groupWrites.length, 3)
+    assert.equal(previews.length, 5, 'two return-to-draft paths and one stale CAS use fresh exact preview identities')
+    assert.equal(applications.length, 3, 'only one rejected stale apply and two confirmed entitlement changes reached the private API')
+    assert.equal(JSON.stringify(usage), ledger, 'all editor and entitlement operations preserve historical usage')
     assert.deepEqual(errors, [])
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.close()
   }
-  console.log('PASS: dist desktop/mobile, real polling and refresh preserve drafts; failed/pending dependencies block direct grants and open user/policy/package/delete dialogs; recovery restores scoped writes; metrics errors remain read-only; package and subscription contracts unchanged')
+  console.log('PASS: dist desktop/mobile, real polling and refresh preserve drafts; failed/pending dependencies block direct grants and open dialogs; fixed policy/package preview requires explicit confirmation, stale CAS refuses apply, return/re-preview preserve drafts and ledger; subscription display remains read-only')
 } finally {
   try { await browser?.close() }
   finally { await new Promise(resolve => server.close(resolve)) }

@@ -389,7 +389,7 @@ pub async fn work(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
     let conflicting:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM remote_commands WHERE server_id=$1 AND (state IN ('claimed','running','cancel_requested') OR (state='queued' AND (spec->>'expires_at')::BIGINT>$2))) OR EXISTS(SELECT 1 FROM diagnostic_jobs WHERE server_id=$1 AND (status IN ('queued','running','cleaning','cancel_requested') OR (NOT agent_completed AND job ? 'id'))) OR EXISTS(SELECT 1 FROM runtime_operations WHERE server_id=$1 AND result IS NULL AND reconciled_at IS NULL AND dispatched_at IS NOT NULL)").bind(id).bind(now).fetch_one(&mut *tx).await?;
     let allowed = !lifecycle_blocked && !conflicting;
     let rows = if allowed {
-        sqlx::query("UPDATE fleet_operations SET status='dispatched',dispatched_at=$2 WHERE id IN (SELECT f.id FROM fleet_operations f WHERE f.server_id=$1 AND f.status='queued' AND NOT EXISTS(SELECT 1 FROM fleet_operations running WHERE running.server_id=$1 AND running.status IN ('dispatched','unknown') AND running.reconciled_at IS NULL AND (f.reconciliation_of IS NULL OR (running.id<>f.reconciliation_of AND (running.reconciliation_of IS NULL OR running.expires_at>$2)))) AND (NOT EXISTS(SELECT 1 FROM operations_server_locks l WHERE l.server_id=$1) OR EXISTS(SELECT 1 FROM operations_server_locks l WHERE l.server_id=$1 AND l.job_id=f.automation_job_id)) ORDER BY f.requested_at,f.id LIMIT 1) RETURNING id,operation,policy,expires_at,requested_by,automation_job_id,reconciliation_of").bind(id).bind(now).fetch_all(&mut *tx).await?
+        sqlx::query("UPDATE fleet_operations SET status='dispatched',dispatched_at=$2 WHERE id IN (SELECT f.id FROM fleet_operations f WHERE f.server_id=$1 AND f.status='queued' AND NOT EXISTS(SELECT 1 FROM fleet_operations running WHERE running.server_id=$1 AND running.status IN ('dispatched','unknown') AND running.reconciled_at IS NULL AND (f.reconciliation_of IS NULL OR (running.id<>f.reconciliation_of AND (running.reconciliation_of IS NULL OR running.expires_at>$2)))) AND (NOT EXISTS(SELECT 1 FROM operations_server_locks l WHERE l.server_id=$1) OR EXISTS(SELECT 1 FROM operations_server_locks l WHERE l.server_id=$1 AND l.job_id=f.automation_job_id) OR EXISTS(SELECT 1 FROM operations_server_locks l JOIN fleet_operations original ON original.id=f.reconciliation_of AND original.server_id=l.server_id WHERE l.server_id=$1 AND l.job_id=original.automation_job_id)) ORDER BY f.requested_at,f.id LIMIT 1) RETURNING id,operation,policy,expires_at,requested_by,automation_job_id,reconciliation_of").bind(id).bind(now).fetch_all(&mut *tx).await?
     } else {
         Vec::new()
     };
@@ -579,7 +579,7 @@ pub async fn get(
     headers: HeaderMap,
     Path(operation_id): Path<Uuid>,
 ) -> ApiResult<Json<Value>> {
-    let row=sqlx::query("SELECT server_id,operation,CASE WHEN reconciled_at IS NOT NULL AND status IN ('dispatched','unknown') THEN 'reconciled' WHEN status='dispatched' AND expires_at<$2 THEN 'unknown' ELSE status END AS status,result,reconciliation FROM fleet_operations WHERE id=$1").bind(operation_id).bind(now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    let row=sqlx::query("SELECT server_id,operation,reconciliation_of,CASE WHEN reconciled_at IS NOT NULL AND status IN ('dispatched','unknown') THEN 'reconciled' WHEN status='dispatched' AND expires_at<$2 THEN 'unknown' ELSE status END AS status,result,reconciliation FROM fleet_operations WHERE id=$1").bind(operation_id).bind(now_timestamp()).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
     let operation: Operation =
         serde_json::from_value(row.get("operation")).map_err(anyhow::Error::from)?;
     crate::control_center::require_server(
@@ -590,7 +590,7 @@ pub async fn get(
     )
     .await?;
     Ok(Json(
-        json!({"id":operation_id,"status":row.get::<String,_>("status"),"result":row.get::<Option<Value>,_>("result"),"reconciliation":row.get::<Option<Value>,_>("reconciliation")}),
+        json!({"id":operation_id,"server_id":row.get::<i64,_>("server_id"),"reconciliation_of":row.get::<Option<Uuid>,_>("reconciliation_of"),"status":row.get::<String,_>("status"),"result":row.get::<Option<Value>,_>("result"),"reconciliation":row.get::<Option<Value>,_>("reconciliation")}),
     ))
 }
 

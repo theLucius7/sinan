@@ -14,6 +14,7 @@ use std::{
     process::Stdio,
     time::Duration,
 };
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -107,6 +108,45 @@ async fn checked(command: &mut Command, stage: &'static str) -> ApiResult<()> {
     Ok(())
 }
 
+async fn version_output(command: &mut Command, budget: Duration) -> ApiResult<String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut process = command
+        .spawn()
+        .map_err(|_| failure("备份工具版本检查无法启动"))?;
+    let mut stdout = process
+        .stdout
+        .take()
+        .ok_or_else(|| failure("备份工具版本输出不可用"))?;
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut bytes = Vec::new();
+    let read =
+        tokio::time::timeout_at(deadline, (&mut stdout).take(4097).read_to_end(&mut bytes)).await;
+    drop(stdout);
+    let read_valid = matches!(read, Ok(Ok(_))) && bytes.len() <= 4096;
+    let status = if read_valid {
+        tokio::time::timeout_at(deadline, process.wait())
+            .await
+            .ok()
+            .transpose()
+            .map_err(anyhow::Error::from)?
+    } else {
+        None
+    };
+    let Some(status) = status else {
+        process.kill().await.map_err(anyhow::Error::from)?;
+        process.wait().await.map_err(anyhow::Error::from)?;
+        return Err(failure("备份工具版本输出超限或检查超时，进程停止已确认"));
+    };
+    if !status.success() {
+        return Err(failure("备份工具版本检查失败"));
+    }
+    String::from_utf8(bytes).map_err(|_| failure("备份工具版本输出无效"))
+}
+
 pub(super) async fn execute(
     state: &AppState,
     id: Uuid,
@@ -170,37 +210,16 @@ async fn execute_in(
     if !dump_path.is_absolute() {
         return Err(failure("pg_dump必须使用明确的绝对工具路径"));
     }
-    let output = Command::new(&dump_path)
-        .arg("--version")
-        .env_clear()
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await
-        .map_err(|_| failure("pg_dump工具不可用"))?;
-    if !output.status.success() {
-        return Err(failure("pg_dump工具版本检查失败"));
-    }
-    let client = String::from_utf8(output.stdout).map_err(|_| failure("pg_dump版本输出无效"))?;
+    let mut dump_version = Command::new(&dump_path);
+    dump_version.arg("--version").env_clear();
+    let client = version_output(&mut dump_version, Duration::from_secs(10)).await?;
     let major = client
         .split_whitespace()
         .find_map(|word| word.split('.').next()?.parse::<i32>().ok())
         .ok_or_else(|| failure("无法确定pg_dump大版本"))?;
-    let age_output = Command::new("/usr/bin/age")
-        .arg("--version")
-        .env_clear()
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await
-        .map_err(|_| failure("age工具不可用"))?;
-    if !age_output.status.success() {
-        return Err(failure("age工具版本检查失败"));
-    }
-    let age_version =
-        String::from_utf8(age_output.stdout).map_err(|_| failure("age版本输出无效"))?;
+    let mut age_version_command = Command::new("/usr/bin/age");
+    age_version_command.arg("--version").env_clear();
+    let age_version = version_output(&mut age_version_command, Duration::from_secs(10)).await?;
     let artifact_lock =
         tokio::time::timeout(Duration::from_secs(30), state.release_permits.acquire())
             .await
@@ -277,7 +296,7 @@ async fn execute_in(
             .map_err(anyhow::Error::from)??;
         hashes.insert(filename.into(), json!(hash));
     }
-    let manifest = json!({"format":2,"complete":true,"created_at":crate::plugins::cloud_api::signing::iso_time(now_timestamp()),"project":"native-scheduled-backup","source_revision":option_env!("SINAN_SOURCE_REVISION"),"image":panel_image,"postgres_image":postgres_image,"postgres_version_num":server_version,"pg_dump_version":client.trim(),"age_version":age_version.trim(),"schema_migrations":migrations,"sha256":hashes,"restore_scope":["database","panel_environment","signed_release_artifacts"],"excluded_transient_data":["network-acme-work","backups"],"node_data_included":false,"snapshot_consistency":"pg_export_snapshot + release_permits for immutable signed release storage","keyring_reference":key_reference,"required_key_ids":key_ids,"keyring_included":false,"dependency_manifest_sha256":[]});
+    let manifest = json!({"format":2,"complete":true,"created_at":crate::plugins::cloud_api::signing::iso_time(now_timestamp()),"project":"native-scheduled-backup","source_revision":option_env!("SINAN_SOURCE_REVISION"),"image":panel_image,"postgres_image":postgres_image,"postgres_version_num":server_version,"pg_dump_version":client.trim(),"age_version":age_version.trim(),"schema_migrations":migrations,"sha256":hashes,"restore_scope":["database","panel_environment","signed_release_artifacts"],"restore_database_authentication":"fresh_isolated_credential","excluded_transient_data":["network-acme-work","backups"],"node_data_included":false,"snapshot_consistency":"pg_export_snapshot + release_permits for immutable signed release storage","keyring_reference":key_reference,"required_key_ids":key_ids,"keyring_included":false,"dependency_manifest_sha256":[]});
     let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(anyhow::Error::from)?;
     private_file(&stage.join("manifest.json"))
         .and_then(|mut f| f.write_all(&manifest_bytes))
@@ -424,6 +443,34 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn version_checks_bound_output_and_stop_timed_out_processes() -> anyhow::Result<()> {
+        let mut valid = Command::new("/bin/sh");
+        valid.args(["-c", "printf 'pg_dump (PostgreSQL) 16.0'"]);
+        assert_eq!(
+            version_output(&mut valid, Duration::from_secs(2)).await?,
+            "pg_dump (PostgreSQL) 16.0"
+        );
+        let mut excessive = Command::new("/bin/sh");
+        excessive.args(["-c", "printf '%4100s' x"]);
+        assert!(
+            version_output(&mut excessive, Duration::from_secs(2))
+                .await
+                .is_err()
+        );
+        let mut stalled = Command::new("/bin/sh");
+        stalled.args(["-c", "exec sleep 30"]);
+        let started = tokio::time::Instant::now();
+        assert!(
+            version_output(&mut stalled, Duration::from_millis(100))
+                .await
+                .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        Ok(())
     }
 
     #[sqlx::test]

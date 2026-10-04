@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -6,6 +7,14 @@ import { extname, resolve, sep } from 'node:path'
 
 // TEST_ONLY: shipping UI and private loopback API snapshots, without a real authenticator.
 // Real WebAuthn, PostgreSQL, password/TOTP and cookie isolation are covered separately.
+// TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
+// Device state and sensitive template content remain explicitly unavailable.
+const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
+  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+  limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
+
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = fileURLToPath(new URL('../dist/', import.meta.url)), prefix = '/api/plugins/sing-box'
 const server = createServer(async (request, response) => {
@@ -38,6 +47,14 @@ try {
         let value
         if (path === '/api/dashboard/access' || path === '/api/me') value = { authenticated: true, public_dashboard: false }
         else if (method === 'GET' && path === `${prefix}/users`) value = users
+        else if (method === 'GET' && !url.search && [ `${prefix}/users/1/diagnosis`, `${prefix}/users/2/diagnosis` ].includes(path)) {
+          const user = users.find(user => path === `${prefix}/users/${user.id}/diagnosis`)
+          if (!user) return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 当前诊断用户不存在' } })
+          value = diagnosisFixture(user)
+        } else if (method === 'GET' && !url.search && [ `${prefix}/users/1/client-template`, `${prefix}/users/2/client-template` ].includes(path)) {
+          if (!users.some(user => path === `${prefix}/users/${user.id}/client-template`)) return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 当前模板用户不存在' } })
+          value = templateFixture
+        }
         else if (method === 'GET' && /^\/api\/plugins\/sing-box\/users\/\d+\/portal$/.test(path)) {
           const id = Number(path.split('/')[5])
           if (!users.some(user => user.id === id) || id === 1 && notFound) return route.fulfill({ status: 404, json: { error: 'TEST_ONLY 当前用户入口不存在' } })
@@ -85,6 +102,7 @@ try {
       await retained(); ++blocked
     }
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/users`)
       const open = portalPanel.getByRole('button', { name: '生成开通链接', exact: true })
       await wait(() => open.isEnabled(), 'initial current user and portal must be ready')

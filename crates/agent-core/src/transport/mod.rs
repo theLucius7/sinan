@@ -242,8 +242,7 @@ pub async fn run_with_diagnostics(
     let cancellation = if !diagnostics.is_empty() && services.supports_confirmed_cancellation() {
         capabilities.push(sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY.into());
         capabilities.push(sinan_protocol::DIAGNOSTIC_COMPLETION_CAPABILITY.into());
-        #[cfg(unix)]
-        if crate::system::diagnostic_cpu_ceiling_supported() {
+        if services.supports_diagnostic_cpu_ceiling() {
             capabilities.push(sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY.into());
         }
         Some(Arc::new(

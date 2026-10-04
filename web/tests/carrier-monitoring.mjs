@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -68,6 +69,7 @@ try {
       }
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected fixture API' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/latency`)
     await page.getByRole('heading', { name: '延迟检测', exact: true }).waitFor()
     const network = label => page.getByRole('region', { name: `${label}周期观测`, exact: true })

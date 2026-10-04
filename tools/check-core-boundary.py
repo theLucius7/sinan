@@ -32,6 +32,7 @@ EXCEPTIONS = {
     ),
     "src/system_network/certificates.rs": (
         r'properties\s*\.get\("User"\)',
+        r'(?<=loaded\.insert\(")User(?="\.into\(\),)',
     ),
     "src/system_network/firewall.rs": (
         r'(?<=WantedBy=)multi-user\.target(?=\\n")',

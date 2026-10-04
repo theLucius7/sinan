@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import resource
 import secrets
+import selectors
 import signal
 import socket
 import ssl
@@ -75,11 +76,49 @@ def deadline(*_):
 def stop(*_):
     global CANCELLED
     CANCELLED = True
-    if PROCESS is not None and PROCESS.poll() is None:
+    if PROCESS is not None:
         try:
             os.killpg(PROCESS.pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             pass
+
+
+
+def reap_process_group():
+    global PROCESS
+    if PROCESS is None:
+        return
+    process = PROCESS
+    def confirmed_gone():
+        global PROCESS
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("process group cleanup is unconfirmed: " + str(process.pid)) from error
+        require(PROCESS is process, "process group cleanup identity changed")
+        PROCESS = None
+    uncertain = None
+    for sent in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sent)
+        except ProcessLookupError:
+            confirmed_gone()
+            return
+        except PermissionError as error:
+            uncertain = error
+        end = time.monotonic() + 2
+        while time.monotonic() < end:
+            process.poll()
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                confirmed_gone()
+                return
+            except PermissionError as error:
+                uncertain = error
+            time.sleep(0.02)
+    # Keep the original identity if descendants have not actually disappeared.
+    raise ValueError("process group cleanup is unconfirmed: " + str(process.pid)) from uncertain
 
 
 def tool_name(check):
@@ -114,6 +153,8 @@ def family(check):
 
 def addresses(host, port, check, socktype=socket.SOCK_STREAM):
     results = socket.getaddrinfo(host, port, family(check), socktype)
+    if (EXECUTION.get("target") or {}).get("host") == host:
+        target()
     require(results, "selected family has no address")
     return [item[4] for item in results]
 
@@ -122,8 +163,19 @@ def target():
     require(isinstance(EXECUTION.get("target"), dict), "authorized target snapshot missing")
     value = EXECUTION["target"]
     require(value.get("authorization"), "target authorization missing")
-    require(not value.get("authorized_until") or value["authorized_until"] > time.time(), "target authorization expired")
+    require(value.get("authorized_until") is None or value["authorized_until"] > time.time(), "target authorization expired")
     return value["host"]
+
+
+
+def execution_seconds(execution):
+    seconds = execution["budget"]["duration_secs"]
+    for captured in (execution.get("target"), execution.get("latency_target")):
+        if captured and captured.get("authorized_until") is not None:
+            remaining = int(captured["authorized_until"] - time.time())
+            require(remaining > 0, "target authorization expired")
+            seconds = min(seconds, remaining)
+    return seconds
 
 
 def current_resources():
@@ -160,35 +212,59 @@ def resource_protection():
 
 def command(args, seconds):
     global PROCESS
+    require(PROCESS is None, "previous process group cleanup is unconfirmed")
     resource_protection()
-    log = tempfile.TemporaryFile(dir=WORKSPACE)
+    output = bytearray()
     snapshots = []
+    selector = selectors.DefaultSelector()
+    pipe = None
     try:
-        PROCESS = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                   start_new_session=True, pass_fds=tuple(FILE_FDS), env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
-        deadline = time.monotonic() + seconds
-        while PROCESS.poll() is None:
+        PROCESS = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   stdin=subprocess.DEVNULL, start_new_session=True,
+                                   pass_fds=tuple(FILE_FDS),
+                                   env={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})
+        pipe = PROCESS.stdout
+        os.set_blocking(pipe.fileno(), False)
+        selector.register(PROCESS.stdout, selectors.EVENT_READ)
+        end = time.monotonic() + seconds
+        eof = False
+        while not eof or PROCESS.poll() is None:
+            require(not CANCELLED, "cancellation requested")
+            require(time.monotonic() < end, "tool timeout")
+            for key, _ in selector.select(min(0.25, max(0, end - time.monotonic()))):
+                block = os.read(key.fd, 4096)
+                if not block:
+                    selector.unregister(key.fileobj)
+                    eof = True
+                    break
+                require(len(output) + len(block) <= LIMIT // 2,
+                        "tool output exceeds controlled limit")
+                output.extend(block)
             if EXECUTION["check"].get("latency_target") and len(LATENCY_SAMPLES) < 32:
                 LATENCY_SAMPLES.append(latency(EXECUTION["check"]))
-            require(not CANCELLED, "cancellation requested")
-            require(time.monotonic() < deadline, "tool timeout")
-            require(os.fstat(log.fileno()).st_size <= LIMIT // 2, "tool output exceeds controlled limit")
             snapshots.append(resource_protection())
             snapshots = snapshots[-32:]
-            time.sleep(0.25)
-        log.seek(0)
-        text = log.read(LIMIT // 2).decode("utf-8", errors="replace")
-        return PROCESS.returncode, text, snapshots
+        return PROCESS.returncode, output.decode("utf-8", errors="replace"), snapshots
     finally:
-        if PROCESS is not None and PROCESS.poll() is None:
-            os.killpg(PROCESS.pid, signal.SIGTERM)
-            try:
-                PROCESS.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(PROCESS.pid, signal.SIGKILL)
-                PROCESS.wait(timeout=2)
-        PROCESS = None
-        log.close()
+        try:
+            reap_process_group()
+        finally:
+            if pipe is not None:
+                pipe.close()
+            selector.close()
+
+
+def file_size_limit(execution):
+    check = execution["check"]
+    if check["kind"] != "disk":
+        return LIMIT * 4
+    size = check.get("file_bytes")
+    budget = execution["budget"].get("disk_bytes", 0)
+    require(type(size) is int and type(budget) is int and
+            0 < size <= budget <= 8 * 1024 * 1024 * 1024,
+            "disk scratch size exceeds resource budget")
+    # Tool output uses a bounded pipe, independently of the scratch file allowance.
+    return max(LIMIT * 4, size)
 
 
 def dns_name(value):
@@ -510,7 +586,15 @@ def path_report(text, tool):
 def latency(check):
     started = time.monotonic()
     try:
-        endpoint = addresses(check["latency_target"], 443, check)[0]
+        frozen = EXECUTION.get("latency_target")
+        require(isinstance(frozen, dict) and frozen.get("id") and
+                frozen.get("host") == check["latency_target"] and frozen.get("authorization"),
+                "load latency target identity is missing or changed")
+        require(frozen.get("authorized_until") is None or frozen["authorized_until"] > time.time(),
+                "load latency target authorization expired")
+        endpoint = addresses(frozen["host"], 443, check)[0]
+        require(frozen.get("authorized_until") is None or frozen["authorized_until"] > time.time(),
+                "load latency target authorization expired")
         with socket.socket(family(check)) as sock:
             sock.settimeout(0.5)
             sock.connect(endpoint)
@@ -571,10 +655,10 @@ def external(check):
         free = os.statvfs(directory).f_bavail * os.statvfs(directory).f_frsize
         require(free > check["file_bytes"] + 2 * 1024 * 1024 * 1024, "disk reserve insufficient")
         descriptor, filename = tempfile.mkstemp(prefix="sinan-fio-", dir=directory)
-        os.ftruncate(descriptor, check["file_bytes"])
-        os.unlink(filename)
         FILE_FDS.append(descriptor)
         CREATED.append(Path(filename))
+        os.unlink(filename)
+        os.ftruncate(descriptor, check["file_bytes"])
         args = [program, "--name=sinan-acceptance", "--filename=/proc/self/fd/" + str(descriptor), "--size=" + str(check["file_bytes"]), "--bs=" + str(check["block_bytes"]), "--iodepth=" + str(check["queue_depth"]), "--rw=" + check["mode"], "--rwmixread=" + str(check["read_percent"]), "--runtime=" + str(check["duration_secs"]), "--time_based", "--direct=1", "--ioengine=libaio", "--output-format=json", "--group_reporting"]
     elif kind == "stability":
         args = [program, "--timeout", str(check["duration_secs"]) + "s", "--metrics-brief"]
@@ -634,6 +718,7 @@ def external(check):
 
 def listener(args, check, maximum):
     global PROCESS
+    require(PROCESS is None, "previous process group cleanup is unconfirmed")
     log = tempfile.TemporaryFile(dir=WORKSPACE)
     try:
         PROCESS = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
@@ -668,15 +753,15 @@ def listener(args, check, maximum):
             require(os.fstat(log.fileno()).st_size <= LIMIT // 2, "listener output exceeds limit")
             resource_protection()
             time.sleep(0.25)
+        require(os.fstat(log.fileno()).st_size <= LIMIT // 2, "listener output exceeds limit")
         log.seek(0)
         raw = log.read(LIMIT // 2).decode("utf-8", "replace")
         return {"listener_ready": ready, "direction": check["direction"], "tool_output": json.loads(raw), "effective_arguments": args[1:]}, raw, PROCESS.returncode == 0
     finally:
-        if PROCESS is not None and PROCESS.poll() is None:
-            os.killpg(PROCESS.pid, signal.SIGKILL)
-            PROCESS.wait(timeout=2)
-        PROCESS = None
-        log.close()
+        try:
+            reap_process_group()
+        finally:
+            log.close()
 
 
 def perform(check):
@@ -799,8 +884,9 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGALRM, deadline)
-    signal.alarm(EXECUTION["budget"]["duration_secs"])
-    resource.setrlimit(resource.RLIMIT_FSIZE, (LIMIT * 4, LIMIT * 4))
+    signal.alarm(execution_seconds(EXECUTION))
+    maximum_file_size = file_size_limit(EXECUTION)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (maximum_file_size, maximum_file_size))
     section("workbench_scope", {"execution": EXECUTION, "listener_ready": False}, True)
     check = EXECUTION["check"]
     report = {"schema": 1, "source": EXECUTION["source_label"], "target": (EXECUTION.get("target") or {}).get("host", check.get("receiver_host", "")),

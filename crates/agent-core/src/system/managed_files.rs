@@ -68,3 +68,58 @@ pub(super) async fn inspect(path: &Path, maximum: usize) -> Result<Value> {
     )
     .await
 }
+
+pub(super) async fn snapshot(path: &Path, maximum: usize) -> Result<Value> {
+    call(
+        path,
+        json!({"action":"snapshot","maximum":maximum.min(256*1024),"root_owned":true}),
+    )
+    .await
+}
+pub(super) async fn update(
+    path: &Path,
+    bytes: Option<&[u8]>,
+    expected: &Value,
+    metadata: &Value,
+) -> Result<Value> {
+    call(path, json!({"action":"update","maximum":256*1024,"root_owned":true,"content":bytes.map(|bytes| STANDARD.encode(bytes)),"expected":expected,"metadata":metadata})).await
+}
+
+pub(super) struct StateLock {
+    _child: tokio::process::Child,
+    _input: tokio::process::ChildStdin,
+}
+impl sinan_adapter_sdk::ManagedStateLock for StateLock {}
+pub(super) async fn lock(path: &Path) -> Result<Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let mut child = Command::new("/usr/bin/python3")
+        .args(["-I", "-u", "-c", include_str!("managed_state_lock.py")])
+        .arg(path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()?;
+    let input = child
+        .stdin
+        .take()
+        .context("lock helper input unavailable")?;
+    let mut output = BufReader::new(
+        child
+            .stdout
+            .take()
+            .context("lock helper output unavailable")?,
+    )
+    .lines();
+    ensure!(
+        tokio::time::timeout(Duration::from_secs(2), output.next_line())
+            .await??
+            .as_deref()
+            == Some("locked"),
+        "network recovery operation is already active or lock ownership is invalid"
+    );
+    Ok(Box::new(StateLock {
+        _child: child,
+        _input: input,
+    }))
+}

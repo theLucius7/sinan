@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -96,6 +97,7 @@ try {
       await wait(() => button.isEnabled(), 'A successful snapshot restores the original action')
     }
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/servers/1/${plugin === 'nodequality' ? 'node-quality' : 'tcp-quality'}`)
       await wait(() => start.isEnabled(), 'Initial diagnostic state is current')
       await version.selectOption(plugin === 'nodequality' ? 'ipv6' : '6')

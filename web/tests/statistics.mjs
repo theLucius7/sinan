@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -45,6 +46,7 @@ try {
       if (path === '/api/statistics' || path === '/api/plugins/sing-box/statistics') return route.fulfill({ json: data(Number(url.searchParams.get('days')), path.includes('sing-box')) })
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected request' } })
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/statistics`)
     await page.getByRole('heading', { name: '统计仪表盘', exact: true }).waitFor()
     await page.getByRole('heading', { name: '代理流量趋势', exact: true }).waitFor()
@@ -91,6 +93,7 @@ try {
     if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: false, public_dashboard: true } })
     privateRequests.push(path); return route.fulfill({ status: 401, json: { error: '请先登录' } })
   })
+  await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/statistics`)
   await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
   assert.deepEqual(privateRequests, [])

@@ -115,14 +115,38 @@ pub async fn pending(
     }
     let values: Vec<(Uuid, Value)> = sqlx::query_as("SELECT id,job FROM diagnostic_jobs WHERE server_id=$1 AND status IN ('queued','running') ORDER BY created_at,id")
         .bind(server_id).fetch_all(&mut *tx).await?;
-    let jobs = values
-        .into_iter()
-        .filter(|(_, job)| {
-            crate::diagnostic_plugins::for_job(job)
-                .is_none_or(|plugin| plugin.can_dispatch(job, &capabilities))
-        })
-        .map(|(id, job)| saved_job(job, id))
-        .collect::<ApiResult<_>>()?;
+    let mut jobs = Vec::new();
+    for (id, job) in values {
+        if !crate::diagnostic_plugins::for_job(&job)
+            .is_none_or(|plugin| plugin.can_dispatch(&job, &capabilities))
+        {
+            continue;
+        }
+        if job["plugin"] == "network-workbench" {
+            match crate::network_workbench::authorize_delivery(&state, &mut tx, server_id, &job)
+                .await
+            {
+                Ok(()) => {}
+                Err(
+                    error @ (ApiError::Conflict(_)
+                    | ApiError::Forbidden(_)
+                    | ApiError::Unauthorized
+                    | ApiError::NotFound),
+                ) => {
+                    // A queued record may already exist as a durable device checkpoint.
+                    // Revocation therefore requests acknowledged cleanup rather than claiming no start.
+                    sqlx::query("UPDATE diagnostic_jobs SET status='cancel_requested',cancel_requested_at=COALESCE(cancel_requested_at,$3),error=$4,updated_at=$3 WHERE id=$1 AND server_id=$2 AND NOT agent_completed")
+                        .bind(id).bind(server_id).bind(now_timestamp()).bind(error.to_string()).execute(&mut *tx).await?;
+                    // The new unresolved cleanup blocks every start in this response,
+                    // including jobs collected before the revoked workbench task.
+                    tx.commit().await?;
+                    return Ok(Json(Vec::new()));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        jobs.push(saved_job(job, id)?);
+    }
     tx.commit().await?;
     Ok(Json(jobs))
 }

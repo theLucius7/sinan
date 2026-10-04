@@ -189,12 +189,49 @@ async fn preview(
     ))
 }
 
-async fn history(
+pub(super) async fn history(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<Value>>> {
     let account = dns_accounts::load(&state.pool, id).await?;
     dns_accounts::authorize(&state, &headers, &account.config, "dns:read").await?;
-    Ok(Json(sqlx::query_scalar("SELECT to_jsonb(h) FROM dns_record_history h WHERE account_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 256").bind(id).fetch_all(&state.pool).await?))
+    let actor = crate::control_center::authenticate(&state, &headers).await?;
+    let entries: Vec<Value> = sqlx::query_scalar("SELECT to_jsonb(h) FROM dns_record_history h WHERE account_id=$1 ORDER BY occurred_at DESC,id DESC LIMIT 256")
+        .bind(id).fetch_all(&state.pool).await?;
+    Ok(Json(
+        entries
+            .into_iter()
+            .filter(|entry| can_read_history(&actor, &account.config, entry))
+            .collect(),
+    ))
+}
+
+pub(super) fn can_read_history(
+    actor: &crate::control_center::Principal,
+    current: &dns_accounts::Config,
+    entry: &Value,
+) -> bool {
+    can_access_history(actor, current, entry, "dns:read")
+}
+
+pub(super) fn can_access_history(
+    actor: &crate::control_center::Principal,
+    current: &dns_accounts::Config,
+    entry: &Value,
+    capability: &str,
+) -> bool {
+    if !dns_accounts::permits(actor, current, capability) {
+        return false;
+    }
+    match entry
+        .get("account_snapshot")
+        .filter(|value| !value.is_null())
+    {
+        Some(snapshot) => serde_json::from_value::<dns_accounts::Config>(snapshot.clone())
+            .is_ok_and(|original| dns_accounts::permits(actor, &original, capability)),
+        // Older rows have no original scope evidence. A current revision match cannot
+        // substitute for that missing evidence for a restricted administrator.
+        None => actor.global_servers(),
+    }
 }

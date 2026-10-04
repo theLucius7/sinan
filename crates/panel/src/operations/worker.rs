@@ -196,7 +196,7 @@ async fn request_cancellation(
     sqlx::query("UPDATE operations_target_steps SET state='skipped',finished_at=$2 WHERE job_id=$1 AND state='pending'").bind(id).bind(now).execute(&mut **tx).await?;
     sqlx::query("UPDATE fleet_operations SET status='cancelled' WHERE id IN (SELECT fleet_operation_id FROM operations_target_steps WHERE job_id=$1) AND status='queued'").bind(id).execute(&mut **tx).await?;
     sync_commands(tx, id, now).await?;
-    sqlx::query("UPDATE operations_target_steps t SET state='uncertain' FROM fleet_operations c WHERE t.job_id=$1 AND t.fleet_operation_id=c.id AND c.status IN ('dispatched','unknown')").bind(id).execute(&mut **tx).await?;
+    sqlx::query("UPDATE operations_target_steps t SET state='uncertain' FROM fleet_operations c WHERE t.job_id=$1 AND t.fleet_operation_id=c.id AND c.reconciled_at IS NULL AND c.status IN ('dispatched','unknown') AND t.state IN ('queued','running','cancel_requested','uncertain')").bind(id).execute(&mut **tx).await?;
     Ok(())
 }
 

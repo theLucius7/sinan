@@ -12,7 +12,7 @@ use axum::{
     http::HeaderMap,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -41,27 +41,44 @@ pub(super) async fn rollback(
         ));
     }
     let mut tx = state.pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(739104824)")
-        .execute(&mut *tx)
-        .await?;
+    super::dns_record_actions::lock(&mut tx).await?;
     let account: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR UPDATE")
         .bind(account_id)
         .fetch_one(&mut *tx)
         .await?;
     dns_accounts::authorize(&state, &headers, &account.config, "dns:write").await?;
-    dns_accounts::lock_credential(&mut tx, &account).await?;
-    let entry:Option<(i64,Value,Option<Value>,Option<Value>)>=sqlx::query_as("SELECT account_revision,request,previous,observed FROM dns_record_history WHERE id=$1 AND account_id=$2 AND status='applied'")
+    let credential_version =
+        super::dns_record_actions::credential_version(&mut tx, &account).await?;
+    let entry:Option<super::dns_record_actions::Intent>=sqlx::query_as("SELECT * FROM dns_record_history WHERE id=$1 AND account_id=$2 AND status='applied' AND rollback_started_at IS NULL FOR UPDATE")
         .bind(history_id).bind(account_id).fetch_optional(&mut *tx).await?;
-    let (revision, request, previous, observed) = entry.ok_or(ApiError::NotFound)?;
-    if revision != account.revision {
+    let entry = entry.ok_or(ApiError::NotFound)?;
+    let actor = control_center::authenticate(&state, &headers).await?;
+    if !super::dns_records::can_access_history(
+        &actor,
+        &account.config,
+        &serde_json::json!({"account_snapshot":entry.account_snapshot}),
+        "dns:write",
+    ) {
+        return Err(ApiError::Forbidden(
+            "当前管理员没有此 DNS 历史原授权范围的变更权限".into(),
+        ));
+    }
+    if entry.account_revision != account.revision
+        || entry
+            .credential_version
+            .is_some_and(|version| version != credential_version)
+    {
         return Err(ApiError::Conflict(
             "账号范围或凭据已变化，请核对后重新预览恢复内容".into(),
         ));
     }
-    let original: Request = serde_json::from_value(request).map_err(anyhow::Error::from)?;
-    let before = previous.ok_or_else(|| ApiError::Conflict("历史缺少修改前记录".into()))?;
-    let after =
-        observed.ok_or_else(|| ApiError::Conflict("历史缺少已核对结果，不能自动回退".into()))?;
+    let original: Request = serde_json::from_value(entry.request).map_err(anyhow::Error::from)?;
+    let before = entry
+        .previous
+        .ok_or_else(|| ApiError::Conflict("历史缺少修改前记录".into()))?;
+    let after = entry
+        .observed
+        .ok_or_else(|| ApiError::Conflict("历史缺少已核对结果，不能自动回退".into()))?;
     let mut request = Request {
         operation: "update".into(),
         zone_id: original.zone_id,
@@ -89,37 +106,28 @@ pub(super) async fn rollback(
             request.record_id = after["id"].as_str().map(str::to_owned);
         }
     }
-    let mut write_started = false;
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(super::REQUEST_BUDGET),
-        super::dns_record_actions::execute(
-            &state.pool,
-            &account,
-            &request,
-            &after,
-            &mut write_started,
-        ),
-    )
-    .await;
-    let (observed, status, error) = match result {
-        Ok(Ok(value)) => {
-            let status = super::dns_record_actions::confirmed_status(&value);
-            (Some(value), status, None)
-        }
-        _ if !write_started => (None, "blocked", Some("precondition_failed")),
-        _ => (None, "unknown", Some("provider_unconfirmed")),
-    };
-    super::dns_record_actions::append(
+    control_center::require_recent_proof(&state, &headers).await?;
+    let administrator = control_center::authenticate(&state, &headers)
+        .await?
+        .admin_id;
+    let operation = super::dns_record_actions::reserve(
         &mut tx,
         &account,
         &request,
-        Some(after),
-        observed.clone(),
-        (status, error),
+        after,
+        super::dns_record_actions::Origin {
+            administrator,
+            credential_version,
+            preview: None,
+            rollback: Some(history_id),
+        },
     )
     .await?;
+    sqlx::query("UPDATE dns_record_history SET rollback_started_at=$2 WHERE id=$1")
+        .bind(history_id)
+        .bind(sinan_protocol::now_timestamp())
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"status":status,"observed":observed,"error_code":error,"reconcile_required":status=="unknown"||status=="submitted"}),
-    ))
+    super::dns_record_actions::perform(&state, &headers, account_id, operation).await
 }

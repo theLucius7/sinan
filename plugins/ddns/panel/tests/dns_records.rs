@@ -12,12 +12,13 @@ use tokio::net::TcpListener;
 const ZONE: &str = "00000000000000000000000000000001";
 const ID: &str = "00000000000000000000000000000002";
 #[derive(Default)]
-struct Data {
-    record: Option<Value>,
-    writes: usize,
-    fail_write: bool,
+pub(super) struct Data {
+    pub(super) requests: usize,
+    pub(super) record: Option<Value>,
+    pub(super) writes: usize,
+    pub(super) fail_write: bool,
 }
-async fn handle(
+pub(super) async fn handle(
     State(data): State<Arc<Mutex<Data>>>,
     request: HttpRequest<Body>,
 ) -> Response<Body> {
@@ -33,6 +34,7 @@ async fn handle(
         serde_json::from_slice(&bytes).unwrap()
     };
     let mut data = data.lock().unwrap();
+    data.requests += 1;
     let result = if parts.uri.path() == format!("/zones/{ZONE}") {
         json!({"id":ZONE,"name":"example.com","status":"active"})
     } else if parts.method == reqwest::Method::GET && parts.uri.path().ends_with(ID) {
@@ -73,7 +75,7 @@ async fn handle(
         .unwrap()
 }
 
-fn account() -> Account {
+pub(super) fn account() -> Account {
     Account {
         id: Uuid::new_v4(),
         config: dns_accounts::Config {
@@ -91,7 +93,7 @@ fn account() -> Account {
         updated_at: 0,
     }
 }
-fn request() -> Request {
+pub(super) fn request() -> Request {
     Request {
         operation: "create".into(),
         zone_id: ZONE.into(),

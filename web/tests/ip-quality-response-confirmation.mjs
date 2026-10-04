@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // Actual dist over private loopback HTTP. Fixtures are panel API outputs, not raw provider responses.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -118,6 +119,7 @@ try {
     async function load(fixture) {
       state = { view: fixture, refreshView: null }
       const answer = page.waitForResponse(response => new URL(response.url()).pathname === '/api/servers/1/ip-quality' && response.request().method() === 'GET')
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/servers/1/ip-info`)
       await page.reload()
       assert.deepEqual(await (await answer).json(), fixture)

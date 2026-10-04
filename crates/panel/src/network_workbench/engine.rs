@@ -79,7 +79,6 @@ pub(super) async fn enqueue(
         if let Check::Throughput {
             receiver_server,
             receiver_host,
-            latency_target,
             ..
         } = &step.check
         {
@@ -98,15 +97,8 @@ pub(super) async fn enqueue(
                     "接收方监听地址必须是该服务器已上报的网卡地址，NAT公开入口需先明确映射".into(),
                 ));
             }
-            if let Some(host) = latency_target {
-                let authorized:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_workbench_targets WHERE host=$1 AND (authorized_until IS NULL OR authorized_until>$2))").bind(host).bind(now_timestamp()).fetch_one(&state.pool).await?;
-                if !authorized {
-                    return Err(ApiError::Conflict(
-                        "负载延迟目标必须属于仍有效的授权目标集".into(),
-                    ));
-                }
-            }
         }
+        let latency_target = super::prepare::latency_target(&state.pool, &step.check).await?;
         let source_ids = step.source.servers();
         let mut entries = vec![];
         let source_list: Vec<Option<i64>> = if source_ids.is_empty() {
@@ -127,6 +119,7 @@ pub(super) async fn enqueue(
                 schema: 1,
                 source_server: source,
                 target: target.clone(),
+                latency_target: latency_target.clone(),
                 check: step.check.clone(),
                 budget: plan.budget.clone(),
                 role: format!(
@@ -146,6 +139,7 @@ pub(super) async fn enqueue(
                     schema: 1,
                     source_server: Some(*receiver_server),
                     target: None,
+                    latency_target: latency_target.clone(),
                     check: step.check.clone(),
                     budget: plan.budget.clone(),
                     role: format!("listener:{receiver_server}"),
@@ -204,6 +198,7 @@ pub(super) async fn enqueue(
                     authorization: "受管服务器反向采集".into(),
                     authorized_until: None,
                 }),
+                latency_target: None,
                 check,
                 budget: plan.budget.clone(),
                 role: format!("reverse:{reverse}"),
@@ -368,11 +363,25 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
     match authorization {
         Ok(()) => {}
         Err(error @ (ApiError::Forbidden(_) | ApiError::Unauthorized)) => {
-            sqlx::query("UPDATE network_workbench_runs SET status='paused',error=$2,updated_at=$3 WHERE id=$1").bind(id).bind(format!("发起人授权已不可用：{error}")).bind(now_timestamp()).execute(&mut *tx).await?;
+            revoke(&mut tx, id, &format!("发起人授权已不可用：{error}")).await?;
             tx.commit().await?;
             return Ok(());
         }
         Err(error) => return Err(error),
+    }
+    for execution in &snapshot.executions[index] {
+        if let Err(error) =
+            super::authorization::current(&mut tx, &snapshot, index, execution).await
+        {
+            match error {
+                ApiError::Conflict(_) | ApiError::NotFound => {
+                    revoke(&mut tx, id, &error.to_string()).await?;
+                    tx.commit().await?;
+                    return Ok(());
+                }
+                error => return Err(error),
+            }
+        }
     }
     let listener = results
         .iter()
@@ -414,6 +423,18 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
             break;
         }
         dispatches += 1;
+        if let Err(error) =
+            super::authorization::current(&mut tx, &snapshot, index, execution).await
+        {
+            match error {
+                ApiError::Conflict(_) | ApiError::NotFound => {
+                    revoke(&mut tx, id, &error.to_string()).await?;
+                    tx.commit().await?;
+                    return Ok(());
+                }
+                error => return Err(error),
+            }
+        }
         if matches!(&execution.check,Check::Throughput{client_mode,..} if client_mode=="local")
             && execution.role.starts_with("source:")
         {
@@ -454,7 +475,7 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
             }
         } else {
             let result_uuid: Uuid = result.get("id");
-            let observation = panel(state, execution).await;
+            let observation = panel(state, &snapshot, index, actor, execution).await;
             let (status, result) = match observation {
                 Ok(v) => (v.status.clone(), json!(v)),
                 Err(error) => (
@@ -469,7 +490,37 @@ async fn advance(state: &AppState, id: Uuid) -> ApiResult<()> {
     tx.commit().await?;
     Ok(())
 }
-async fn panel(state: &AppState, execution: &Execution) -> ApiResult<Observation> {
+async fn revoke(connection: &mut sqlx::PgConnection, id: Uuid, reason: &str) -> ApiResult<()> {
+    let now = now_timestamp();
+    sqlx::query("UPDATE diagnostic_jobs SET status='cancel_requested',cancel_requested_at=COALESCE(cancel_requested_at,$2),updated_at=$2,error=$3 WHERE id IN (SELECT job_id FROM network_workbench_results WHERE run_id=$1 AND job_id IS NOT NULL) AND NOT agent_completed")
+        .bind(id).bind(now).bind(reason).execute(&mut *connection).await?;
+    sqlx::query("UPDATE network_workbench_runs SET status='cancel_requested',error=$2,updated_at=$3 WHERE id=$1")
+        .bind(id).bind(reason).bind(now).execute(&mut *connection).await?;
+    Ok(())
+}
+async fn authorize_panel(
+    state: &AppState,
+    snapshot: &Snapshot,
+    index: usize,
+    actor: i64,
+    execution: &Execution,
+) -> ApiResult<()> {
+    control_center::require_actor_capability(state, actor, "diagnostics:write").await?;
+    for item in snapshot.executions.iter().flatten() {
+        if let Some(server) = item.source_server {
+            control_center::require_actor_server(state, actor, server, "diagnostics:write").await?;
+        }
+    }
+    let mut connection = state.pool.acquire().await?;
+    super::authorization::current(&mut connection, snapshot, index, execution).await
+}
+async fn panel(
+    state: &AppState,
+    snapshot: &Snapshot,
+    index: usize,
+    actor: i64,
+    execution: &Execution,
+) -> ApiResult<Observation> {
     let target = execution.target.as_ref();
     let mut raw = String::new();
     let data = match &execution.check {
@@ -479,32 +530,30 @@ async fn panel(state: &AppState, execution: &Execution) -> ApiResult<Observation
             samples,
             ..
         } => {
-            let host = &target.ok_or(ApiError::NotFound)?.host;
-            let addresses: Vec<_> = tokio::net::lookup_host((host.as_str(), *port))
-                .await
-                .map_err(anyhow::Error::from)?
-                .filter(|addr| match family {
-                    Family::Ipv4 => addr.is_ipv4(),
-                    Family::Ipv6 => addr.is_ipv6(),
-                })
-                .collect();
-            if addresses.is_empty() {
-                return Err(ApiError::Conflict("目标没有选定地址族".into()));
-            }
-            let mut results = vec![];
-            for _ in 0..*samples {
-                let timer = Instant::now();
-                let result = tokio::time::timeout(
-                    Duration::from_secs(3),
-                    tokio::net::TcpStream::connect(addresses.as_slice()),
-                )
-                .await;
-                results.push(match result{Ok(Ok(stream))=>{let peer=stream.peer_addr().map_err(anyhow::Error::from)?;drop(stream);json!({"connected":true,"elapsed_ms":timer.elapsed().as_secs_f64()*1000.0,"address":peer.ip().to_string()})},Ok(Err(e))=>json!({"connected":false,"failure":e.to_string()}),Err(_)=>json!({"connected":false,"failure":"连接超时"})});
-            }
-            json!({"samples":results,"port":port,"family":family,"method":"tcp_connect"})
+            let host = target.ok_or(ApiError::NotFound)?.host.clone();
+            let lookup = async move {
+                tokio::net::lookup_host((host.as_str(), *port))
+                    .await
+                    .map(|values| {
+                        values
+                            .filter(|addr| match family {
+                                Family::Ipv4 => addr.is_ipv4(),
+                                Family::Ipv6 => addr.is_ipv6(),
+                            })
+                            .take(64)
+                            .collect::<Vec<_>>()
+                    })
+            };
+            tcp_probe(execution, *port, *family, *samples, lookup, || {
+                authorize_panel(state, snapshot, index, actor, execution)
+            })
+            .await?
         }
         Check::Http { .. } => {
-            let (data, body) = super::http_probe::probe(execution).await?;
+            let (data, body) = super::http_probe::probe_authorized(execution, || {
+                authorize_panel(state, snapshot, index, actor, execution)
+            })
+            .await?;
             raw = body;
             data
         }
@@ -547,6 +596,62 @@ async fn panel(state: &AppState, execution: &Execution) -> ApiResult<Observation
         },
     })
 }
+async fn tcp_probe<F>(
+    execution: &Execution,
+    port: u16,
+    family: Family,
+    samples: u8,
+    lookup: impl std::future::Future<Output = std::io::Result<Vec<std::net::SocketAddr>>>,
+    mut authorize: impl FnMut() -> F,
+) -> ApiResult<Value>
+where
+    F: std::future::Future<Output = ApiResult<()>>,
+{
+    let target = execution.target.as_ref().ok_or(ApiError::NotFound)?;
+    let now = now_timestamp();
+    let seconds = target
+        .authorized_until
+        .map_or(u64::from(execution.budget.duration_secs), |end| {
+            u64::from(execution.budget.duration_secs).min(end.saturating_sub(now).max(0) as u64)
+        });
+    if seconds == 0 {
+        return Err(ApiError::Conflict("探测目标授权已到期".into()));
+    }
+    tokio::time::timeout(Duration::from_secs(seconds), async {
+        authorize().await?;
+        let addresses = lookup.await.map_err(anyhow::Error::from)?;
+        if addresses.is_empty() {
+            return Err(ApiError::Conflict("目标没有选定地址族".into()));
+        }
+        if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
+            return Err(ApiError::Conflict("探测目标授权已到期".into()));
+        }
+        let mut results = vec![];
+        for _ in 0..samples {
+            if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
+                return Err(ApiError::Conflict("探测目标授权已到期".into()));
+            }
+            let timer = Instant::now();
+            let mut observation = json!({"connected":false,"failure":"没有可连接地址"});
+            for address in addresses.iter().take(64) {
+                authorize().await?;
+                if target.authorized_until.is_some_and(|end| end <= now_timestamp()) {
+                    return Err(ApiError::Conflict("探测目标授权已到期".into()));
+                }
+                let result = tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(address)).await;
+                observation = match result {
+                    Ok(Ok(stream)) => { let peer=stream.peer_addr().map_err(anyhow::Error::from)?; drop(stream); json!({"connected":true,"elapsed_ms":timer.elapsed().as_secs_f64()*1000.0,"address":peer.ip().to_string()}) },
+                    Ok(Err(error)) => json!({"connected":false,"failure":error.to_string()}),
+                    Err(_) => json!({"connected":false,"failure":"连接超时"}),
+                };
+                if observation["connected"] == true { break; }
+            }
+            results.push(observation);
+        }
+        Ok(json!({"samples":results,"port":port,"family":family,"method":"tcp_connect"}))
+    }).await.map_err(|_| ApiError::Conflict("面板 TCP 检测超过总时长或授权期限".into()))?
+}
+
 pub(super) async fn report(state: &AppState, id: Uuid) -> ApiResult<Value> {
     let row = sqlx::query("SELECT * FROM network_workbench_runs WHERE id=$1")
         .bind(id)
@@ -558,4 +663,180 @@ pub(super) async fn report(state: &AppState, id: Uuid) -> ApiResult<Value> {
     Ok(
         json!({"id":id,"status":row.get::<String,_>("status"),"snapshot":row.get::<Value,_>("snapshot"),"current_step":row.get::<i32,_>("current_step"),"error":row.get::<Option<String>,_>("error"),"created_at":row.get::<i64,_>("created_at"),"updated_at":row.get::<i64,_>("updated_at"),"summary":{"step_count":row.get::<Value,_>("snapshot")["plan"]["steps"].as_array().map_or(0,Vec::len),"result_count":results.len(),"succeeded":results.iter().filter(|v|v["status"]=="succeeded").count(),"failed":results.iter().filter(|v|v["status"]=="failed").count(),"cleanup_pending":results.iter().filter(|v|v["cleanup_origin"]=="agent"&&v["cleanup_confirmed"]==false).count()},"results":results,"physical_acceptance":"pending"}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn execution() -> Execution {
+        let id = Uuid::new_v4();
+        Execution {
+            schema: 1,
+            source_server: None,
+            latency_target: None,
+            role: "source:panel".into(),
+            source_label: "面板".into(),
+            budget: Budget {
+                duration_secs: 1,
+                ..Budget::default()
+            },
+            target: Some(Target {
+                id,
+                name: "TEST_ONLY".into(),
+                host: "127.0.0.1".into(),
+                region: String::new(),
+                carrier: String::new(),
+                purpose: "isolated probe".into(),
+                authorization: "TEST_ONLY".into(),
+                authorized_until: None,
+            }),
+            check: Check::Tcp {
+                target_id: id,
+                port: 12345,
+                family: Family::Ipv4,
+                samples: 1,
+            },
+        }
+    }
+    #[tokio::test]
+    async fn tcp_dns_wait_consumes_the_whole_plan_deadline() {
+        let started = Instant::now();
+        let error = tcp_probe(
+            &execution(),
+            12345,
+            Family::Ipv4,
+            1,
+            std::future::pending::<std::io::Result<Vec<std::net::SocketAddr>>>(),
+            || std::future::ready(Ok(())),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("总时长"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+    #[tokio::test]
+    async fn expired_tcp_authorization_never_polls_resolution() {
+        let mut execution = execution();
+        execution.target.as_mut().unwrap().authorized_until = Some(now_timestamp() - 1);
+        let error = tcp_probe(
+            &execution,
+            12345,
+            Family::Ipv4,
+            1,
+            async {
+                panic!("expired authorization must not resolve");
+                #[allow(unreachable_code)]
+                Ok(vec![])
+            },
+            || std::future::ready(Ok(())),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("到期"));
+    }
+    #[tokio::test]
+    async fn tcp_observes_the_actual_selected_family_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let result = tcp_probe(
+            &execution(),
+            address.port(),
+            Family::Ipv4,
+            2,
+            std::future::ready(Ok(vec![address])),
+            || std::future::ready(Ok(())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["samples"].as_array().unwrap().len(), 2);
+        assert_eq!(result["samples"][0]["connected"], true);
+        assert_eq!(result["samples"][1]["address"], "127.0.0.1");
+    }
+    #[tokio::test]
+    async fn revocation_after_dns_or_between_samples_sends_no_later_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        for allowed in [1, 2] {
+            let checks = std::cell::Cell::new(0);
+            let error = tcp_probe(
+                &execution(),
+                address.port(),
+                Family::Ipv4,
+                2,
+                std::future::ready(Ok(vec![address])),
+                || {
+                    checks.set(checks.get() + 1);
+                    std::future::ready(if checks.get() <= allowed {
+                        Ok(())
+                    } else {
+                        Err(ApiError::Conflict("TEST_ONLY revoked".into()))
+                    })
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("revoked"));
+            assert_eq!(checks.get(), allowed + 1);
+            if allowed == 2 {
+                drop(listener.accept().await.unwrap());
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(30), listener.accept())
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[sqlx::test]
+    async fn revoked_execution_requests_cleanup_without_fabricating_completion(
+        pool: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        sqlx::migrate!("./migrations").run(&pool).await?;
+        let server: i64 =
+            sqlx::query_scalar("INSERT INTO servers(name) VALUES('TEST_ONLY revoke') RETURNING id")
+                .fetch_one(&pool)
+                .await?;
+        let run = Uuid::new_v4();
+        sqlx::query("INSERT INTO network_workbench_runs(id,snapshot,status,actor,created_at,updated_at) VALUES($1,'{}','running','1',0,0)")
+            .bind(run).execute(&pool).await?;
+        let pending = Uuid::new_v4();
+        let completed = Uuid::new_v4();
+        for (id, status, confirmed) in [(pending, "running", false), (completed, "succeeded", true)]
+        {
+            sqlx::query("INSERT INTO diagnostic_jobs(id,server_id,job,status,report,agent_completed,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,0,0,$7)")
+                .bind(id).bind(server).bind(json!({"id":id,"plugin":"network-workbench"})).bind(status)
+                .bind(json!({"text":"TEST_ONLY original receipt"})).bind(confirmed).bind(now_timestamp()+300).execute(&pool).await?;
+            sqlx::query("INSERT INTO network_workbench_results(id,run_id,step_index,server_id,role,job_id,status,created_at,updated_at) VALUES($1,$2,0,$3,$4,$5,$6,0,0)")
+                .bind(Uuid::new_v4()).bind(run).bind(server).bind(id.to_string()).bind(id).bind(status).execute(&pool).await?;
+        }
+        let mut connection = pool.acquire().await?;
+        revoke(&mut connection, run, "TEST_ONLY revoked").await?;
+        let row = sqlx::query("SELECT status,agent_completed,report,cancel_requested_at FROM diagnostic_jobs WHERE id=$1")
+            .bind(pending).fetch_one(&mut *connection).await?;
+        assert_eq!(row.get::<String, _>("status"), "cancel_requested");
+        assert!(!row.get::<bool, _>("agent_completed"));
+        assert_eq!(
+            row.get::<Value, _>("report"),
+            json!({"text":"TEST_ONLY original receipt"})
+        );
+        assert!(row.get::<Option<i64>, _>("cancel_requested_at").is_some());
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("SELECT status FROM diagnostic_jobs WHERE id=$1")
+                .bind(completed)
+                .fetch_one(&mut *connection)
+                .await?,
+            "succeeded"
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, String>(
+                "SELECT status FROM network_workbench_runs WHERE id=$1"
+            )
+            .bind(run)
+            .fetch_one(&mut *connection)
+            .await?,
+            "cancel_requested"
+        );
+        Ok(())
+    }
 }

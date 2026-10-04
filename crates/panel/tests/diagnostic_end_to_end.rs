@@ -72,6 +72,10 @@ impl ServiceManager for IndependentServices {
     fn supports_confirmed_cancellation(&self) -> bool {
         true
     }
+    fn supports_diagnostic_cpu_ceiling(&self) -> bool {
+        // TEST_ONLY explicit simulated backend; no native controller is probed.
+        true
+    }
     fn diagnostic_cleanup_confirmed<'a>(
         &'a self,
         unit: &'a str,
@@ -95,6 +99,16 @@ impl ServiceManager for IndependentServices {
     }
     fn start_job<'a>(&'a self, job: &'a ServiceJob) -> BoxFuture<'a, ()> {
         Box::pin(async move {
+            // TEST_ONLY: this backend records a bounded daily service contract;
+            // it does not start a native service or certify a host CPU controller.
+            assert_eq!(job.timeout_secs, 90);
+            assert_eq!(job.memory_max.get(), 64 * 1024 * 1024);
+            assert_eq!(job.tasks_max.get(), 32);
+            assert_eq!(job.cpu_max_percent.get(), 100);
+            assert_eq!(job.cpu_weight.get(), 10);
+            assert_eq!(job.io_weight.get(), 10);
+            assert_eq!(job.oom_score_adjust.get(), 500);
+            assert!(job.args.windows(2).any(|args| args == ["--mode", "daily"]));
             let mut jobs = self.jobs.lock().unwrap();
             anyhow::ensure!(!jobs.contains_key(&job.unit), "duplicate service start");
             jobs.insert(
@@ -192,13 +206,14 @@ async fn node_report_survives_agent_restart_and_is_started_only_once(pool: PgPoo
                     .bind(id)
                     .fetch_one(&harness.state.pool)
                     .await?;
-            Ok(row
-                .0
+            Ok(row.0.as_array().is_some_and(|caps| {
+                caps.iter().any(|cap| cap == "diagnostic:nodequality")
+                    && caps
+                        .iter()
+                        .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
+            }) && row.1["ip_addresses"]
                 .as_array()
-                .is_some_and(|caps| caps.iter().any(|cap| cap == "diagnostic:nodequality"))
-                && row.1["ip_addresses"]
-                    .as_array()
-                    .is_some_and(|ips| ips.iter().any(|ip| ip == "192.0.2.10")))
+                .is_some_and(|ips| ips.iter().any(|ip| ip == "192.0.2.10")))
         },
     )
     .await?;

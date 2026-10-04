@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -79,6 +80,7 @@ try {
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers`)
     await page.getByRole('button', { name: '添加服务器', exact: true }).first().click()
     const dialog = page.getByRole('dialog')

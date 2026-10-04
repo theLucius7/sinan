@@ -46,7 +46,17 @@ fn authorized(execution: &Execution, url: &reqwest::Url) -> ApiResult<()> {
     Ok(())
 }
 
-pub(super) async fn probe(execution: &Execution) -> ApiResult<(Value, String)> {
+#[cfg(test)]
+async fn probe(execution: &Execution) -> ApiResult<(Value, String)> {
+    probe_authorized(execution, || std::future::ready(Ok(()))).await
+}
+pub(super) async fn probe_authorized<F>(
+    execution: &Execution,
+    mut authorize: impl FnMut() -> F,
+) -> ApiResult<(Value, String)>
+where
+    F: std::future::Future<Output = ApiResult<()>>,
+{
     let Check::Http {
         url,
         family,
@@ -60,13 +70,25 @@ pub(super) async fn probe(execution: &Execution) -> ApiResult<(Value, String)> {
     };
     let mut current = reqwest::Url::parse(url).map_err(anyhow::Error::from)?;
     let started = Instant::now();
-    let maximum = Duration::from_secs(u64::from(execution.budget.duration_secs).min(60));
+    let seconds = u64::from(execution.budget.duration_secs).min(60);
+    let seconds = execution
+        .target
+        .as_ref()
+        .and_then(|target| target.authorized_until)
+        .map_or(seconds, |end| {
+            seconds.min(end.saturating_sub(now_timestamp()).max(0) as u64)
+        });
+    if seconds == 0 {
+        return Err(conflict("HTTP目标授权已到期"));
+    }
+    let maximum = Duration::from_secs(seconds);
     tokio::time::timeout(maximum, async {
         let mut requests = Vec::new();
         let mut redirects = Vec::new();
         loop {
             authorized(execution, &current)?;
-            let response = tokio::time::timeout(Duration::from_secs(10), request(&current, *family))
+            authorize().await?;
+            let response = tokio::time::timeout(Duration::from_secs(10), request(execution, &current, *family, &mut authorize))
                 .await.map_err(|_| conflict("HTTP请求超过10秒阶段截止"))??;
             requests.push(response.timings.clone());
             if *follow_redirects && matches!(response.status, 301 | 302 | 303 | 307 | 308) {
@@ -96,7 +118,15 @@ struct Response {
     body: Vec<u8>,
     timings: Value,
 }
-async fn request(url: &reqwest::Url, family: Family) -> ApiResult<Response> {
+async fn request<F>(
+    execution: &Execution,
+    url: &reqwest::Url,
+    family: Family,
+    authorize: &mut impl FnMut() -> F,
+) -> ApiResult<Response>
+where
+    F: std::future::Future<Output = ApiResult<()>>,
+{
     let started = Instant::now();
     let name = host(url)?;
     let port = url
@@ -114,13 +144,30 @@ async fn request(url: &reqwest::Url, family: Family) -> ApiResult<Response> {
         .take(64)
         .collect();
     let dns_ms = milliseconds(dns);
+    authorized(execution, url)?;
     if addresses.is_empty() {
         return Err(conflict("HTTP目标没有选定地址族"));
     }
     let connecting = Instant::now();
-    let tcp = TcpStream::connect(addresses.as_slice())
-        .await
-        .map_err(anyhow::Error::from)?;
+    let mut connected = None;
+    let mut last_error = None;
+    for address in &addresses {
+        authorize().await?;
+        authorized(execution, url)?;
+        match TcpStream::connect(address).await {
+            Ok(stream) => {
+                connected = Some(stream);
+                break;
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    let tcp = connected.ok_or_else(|| {
+        conflict(format!(
+            "HTTP连接失败：{}",
+            last_error.map_or_else(|| "没有可连接地址".into(), |error| error.to_string())
+        ))
+    })?;
     let connect_ms = milliseconds(connecting);
     let peer = tcp.peer_addr().map_err(anyhow::Error::from)?;
     let authority = if name.contains(':') {
@@ -156,8 +203,12 @@ async fn request(url: &reqwest::Url, family: Family) -> ApiResult<Response> {
             .await
             .map_err(|error| conflict(format!("HTTP TLS握手失败：{error}")))?;
         let tls_ms = milliseconds(tls);
+        authorize().await?;
+        authorized(execution, url)?;
         (exchange(stream, message.as_bytes()).await?, Some(tls_ms))
     } else {
+        authorize().await?;
+        authorized(execution, url)?;
         (exchange(tcp, message.as_bytes()).await?, None)
     };
     response.timings["url"] = json!(url.as_str());
@@ -407,6 +458,7 @@ mod tests {
         Execution {
             schema: 1,
             source_server: None,
+            latency_target: None,
             role: "source:panel".into(),
             source_label: "面板".into(),
             budget: Budget::default(),
@@ -446,6 +498,37 @@ mod tests {
         });
         (format!("http://{address}/fixture?sample=1"), task)
     }
+    #[tokio::test]
+    async fn http_rechecks_current_grant_before_connect_and_before_request_write() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/fixture", listener.local_addr().unwrap());
+        for allowed in [1, 2] {
+            let checks = std::cell::Cell::new(0);
+            let error = probe_authorized(&execution(url.clone()), || {
+                checks.set(checks.get() + 1);
+                std::future::ready(if checks.get() <= allowed {
+                    Ok(())
+                } else {
+                    Err(conflict("TEST_ONLY revoked"))
+                })
+            })
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("revoked"));
+            assert_eq!(checks.get(), allowed + 1);
+            if allowed == 2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut byte = [0];
+                assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(30), listener.accept())
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
     #[tokio::test]
     async fn stage_timings_and_body_come_from_one_actual_request() {
         let (url, task) = fixture(

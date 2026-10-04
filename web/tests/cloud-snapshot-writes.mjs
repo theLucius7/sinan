@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -56,6 +57,7 @@ try {
       await refresh.evaluate(element => element.click()); await response
     }
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/alicloud`)
       const names = { account: '编辑账号与策略', resource: '编辑策略', bandwidth: '调整带宽与计费', policy: '配置自动启停', power: '停机' }
       const opener = page.getByRole('button', { name: names[kind], exact: true })

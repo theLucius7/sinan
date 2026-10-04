@@ -224,22 +224,6 @@ pub(super) async fn zone(client: &RecordClient, account: &Account, id: &str) -> 
     client.zone(id).await.map_err(failure)
 }
 
-pub(super) async fn lock_credential(
-    connection: &mut sqlx::PgConnection,
-    account: &Account,
-) -> ApiResult<()> {
-    let valid: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM credential_entries WHERE id=$1 AND kind='dns' AND enabled FOR SHARE",
-    )
-    .bind(account.config.credential_id)
-    .fetch_optional(connection)
-    .await?;
-    if valid.is_none() {
-        return Err(ApiError::Conflict("DNS 凭据不存在或已停用".into()));
-    }
-    Ok(())
-}
-
 async fn check(
     State(state): State<AppState>,
     headers: HeaderMap,

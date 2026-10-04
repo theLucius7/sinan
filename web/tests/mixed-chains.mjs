@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -5,6 +6,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve, extname, sep } from 'node:path'
 
 const catalogView = resources => resources.map(resource => ({ ...resource, original_name: resource.name, tags: [], note: '', sort_order: resource.id, revision: '1'.repeat(64), metadata_revision: 0 }))
+// TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
+// Device state and sensitive template content remain explicitly unavailable.
+const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
+  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+  limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
+
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const server = createServer(async (request, response) => {
@@ -70,6 +79,8 @@ try {
       if(path==='/api/plugins/sing-box/package-groups')return reply([])
       if(path==='/api/plugins/sing-box/users')return reply([{id:1,name:'测试代理用户',subscription_url:'https://panel.example.com/sub/TEST_ONLY',subscription_token:'TEST_ONLY'}])
       if(path==='/api/plugins/sing-box/users/1/portal')return reply({configuration:{enabled:false,reason:'TEST_ONLY 未启用',origin:`http://127.0.0.1:${server.address().port}`},keys:0,url:null,activation_expires_at:null})
+      if(method==='GET'&&!new URL(request.url()).search&&path==='/api/plugins/sing-box/users/1/diagnosis')return reply(diagnosisFixture({id:1,name:'测试代理用户'}))
+      if(method==='GET'&&!new URL(request.url()).search&&path==='/api/plugins/sing-box/users/1/client-template')return reply(templateFixture)
       if(path.endsWith('/users/1/policy-groups'))return reply({group_ids:[]})
       if(path.endsWith('/users/1/external-accesses'))return reply({revision:0,accesses:[],available_nodes:[]})
       if(path.endsWith('/users/1/portal'))return reply({configuration:{enabled:false,reason:'TEST_ONLY 未启用',origin:'https://panel.example.com'},keys:0,url:null,activation_expires_at:null})
@@ -77,6 +88,7 @@ try {
       if(path.endsWith('/accesses'))return reply([])
       errors.push(`Unexpected ${method} ${path}`);return route.fulfill({status:404,json:{error:'Unexpected API'}})
     })
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
     await page.getByRole('button',{name:'创建链路',exact:true}).click()
     const editor=page.getByRole('region',{name:'创建链路'})

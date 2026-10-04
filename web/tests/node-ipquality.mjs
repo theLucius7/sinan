@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // Render the actual built frontend; all API responses and third-party results are fixtures.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -70,6 +71,7 @@ try {
       }
       return route.fulfill({ json: value })
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/ip-info`)
     await page.getByRole('heading', { name: '节点出口自查', exact: true }).waitFor()
     const results = page.locator('[aria-label="节点观察出口"]')

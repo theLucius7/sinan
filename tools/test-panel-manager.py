@@ -32,6 +32,17 @@ elif "pg_dump" in args:
         print("private-database-password", file=sys.stderr)
         sys.exit(7)
     sys.stdout.buffer.write(b"PGDMP-fixture")
+elif "psql" in args:
+    statement = args[-1]
+    if "FROM _sqlx_migrations WHERE success" in statement:
+        print(json.dumps([{"version": 1, "checksum": "a" * 96},
+                          {"version": 54, "checksum": "b" * 96}]))
+    elif statement == "SHOW server_version_num":
+        print("160015")
+    elif "FROM credential_entries" in statement:
+        print(os.environ.get("PANEL_TEST_KEY_IDS", "[]"))
+    else:
+        raise SystemExit("fixture rejects unexpected database statement")
 elif "stop" in args and os.environ.get("PANEL_TEST_STOP_FAIL"):
     sys.exit(9)
 elif "run" in args:
@@ -93,6 +104,15 @@ class ManagerTests(unittest.TestCase):
         destination, = self.backups.iterdir()
         manifest = json.loads((destination / "manifest.json").read_text())
         self.assertTrue(manifest["complete"])
+        self.assertEqual(manifest["format"], 2)
+        self.assertEqual(manifest["postgres_version_num"], 160015)
+        self.assertEqual(manifest["schema_migrations"], [
+            {"version": 1, "checksum": "a" * 96},
+            {"version": 54, "checksum": "b" * 96},
+        ])
+        self.assertEqual(manifest["required_key_ids"], [])
+        self.assertFalse(manifest["keyring_included"])
+        self.assertFalse(manifest["node_data_included"])
         for filename, digest in manifest["sha256"].items():
             path = destination / filename
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
@@ -100,6 +120,51 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual((destination / "environment").read_bytes(), content)
         self.assertEqual(self.env_file.read_bytes(), content)
         self.assertFalse(any("--volumes" in command for command in commands))
+
+    def test_backup_keeps_required_key_id_and_independent_reference_without_copying_keyring(self):
+        self.init()
+        private = 'SINAN_CREDENTIAL_KEYS={"TEST_ONLY-key":"TEST_ONLY private master key sentinel"}\nSINAN_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n'
+        reference = "TEST_ONLY independent offline keyring location"
+        with self.env_file.open("a") as environment:
+            environment.write(private + f"SINAN_BACKUP_KEYRING_REFERENCE={reference}\n")
+        content = self.env_file.read_bytes()
+        result = self.run_cli("backup", PANEL_TEST_KEY_IDS='["TEST_ONLY-key"]')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env_file.read_bytes(), content)
+        destination, = self.backups.iterdir()
+        manifest = json.loads((destination / "manifest.json").read_text())
+        self.assertTrue(manifest["complete"])
+        self.assertEqual(manifest["required_key_ids"], ["TEST_ONLY-key"])
+        self.assertEqual(manifest["keyring_reference"], reference)
+        self.assertFalse(manifest["keyring_included"])
+        backup_environment = (destination / "environment").read_text()
+        self.assertNotIn("SINAN_CREDENTIAL_KEYS", backup_environment)
+        self.assertNotIn("SINAN_CREDENTIAL_CURRENT_KEY", backup_environment)
+        self.assertNotIn("TEST_ONLY private master key sentinel", backup_environment)
+        self.assertEqual(backup_environment, content.decode().replace(private, ""))
+        for filename, digest in manifest["sha256"].items():
+            self.assertEqual(hashlib.sha256((destination / filename).read_bytes()).hexdigest(), digest)
+            self.assertEqual((destination / filename).stat().st_mode & 0o777, 0o600)
+        self.assertNotIn("TEST_ONLY private master key sentinel", result.stdout + result.stderr)
+        self.assertFalse(any("build" in command or "up" in command for command in self.commands()))
+
+    def test_required_backup_keys_without_independent_reference_block_upgrade_and_restore_service(self):
+        self.init()
+        private = "SINAN_CREDENTIAL_KEYS=TEST_ONLY private master key sentinel\nSINAN_CREDENTIAL_CURRENT_KEY=TEST_ONLY-key\n"
+        with self.env_file.open("a") as environment:
+            environment.write(private)
+        content = self.env_file.read_bytes()
+        result = self.run_cli("upgrade", PANEL_TEST_KEY_IDS='["TEST_ONLY-key"]')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SINAN_BACKUP_KEYRING_REFERENCE", result.stderr)
+        self.assertEqual(self.env_file.read_bytes(), content)
+        destination, = self.backups.iterdir()
+        self.assertFalse((destination / "manifest.json").exists())
+        self.assertNotIn("TEST_ONLY private master key sentinel", (destination / "environment").read_text())
+        self.assertNotIn("TEST_ONLY private master key sentinel", result.stdout + result.stderr)
+        commands = self.commands()
+        self.assertTrue(any("start" in command for command in commands))
+        self.assertFalse(any("build" in command or "up" in command for command in commands))
 
     def test_failed_backup_restarts_original_service_and_prevents_upgrade(self):
         self.init()

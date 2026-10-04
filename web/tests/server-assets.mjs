@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -68,6 +69,7 @@ try {
       unexpected.push(`${request.method()} ${path}`)
       return fulfill({ error: 'Unexpected fixture request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers`)
     await page.getByRole('button', { name: '添加服务器', exact: true }).click()
     const dialog = page.getByRole('dialog')
@@ -113,6 +115,7 @@ try {
     await dialog.waitFor({ state: 'hidden' })
     assert.equal(entries[1].asset_settings.traffic_limit, '18446744073709551615')
     assert.equal(entries[1].asset_settings.auto_renewal, true)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview`)
     const card = page.getByRole('link', { name: /东京资产，在线，查看详情/ })
     await card.waitFor()
@@ -137,6 +140,7 @@ try {
     await page.getByRole('heading', { name: '资产与流量额度' }).waitFor()
     await page.getByText('线路:BGP', { exact: true }).waitFor()
     await page.getByText(/统计网卡：eth\*,!eth1/).waitFor()
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/2`)
     await page.getByRole('button', { name: '编辑资产配置' }).click()
     await dialog.getByRole('switch', { name: /在展示页隐藏/ }).check()
@@ -149,9 +153,11 @@ try {
     assert.equal(entries[1].asset_settings.price, null)
     assert.equal(entries[1].asset_settings.expires_at, null)
     assert.deepEqual(entries[1].asset_settings.tags, [])
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview`)
     await page.getByRole('link', { name: /备用服务器，在线，查看详情/ }).waitFor()
     assert.equal(await page.getByRole('link', { name: /东京资产，在线，查看详情/ }).count(), 0)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers`)
     await page.getByRole('button', { name: /东京资产/ }).waitFor()
     assert.deepEqual(errors, [])

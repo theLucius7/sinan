@@ -1,0 +1,181 @@
+{
+  "schema": "sinan-pr160-reviewed-local-delivery-v1",
+  "recorded_at": "2026-10-04T01:51:54.997040+00:00",
+  "author_head": "9e2ad608b2764e89880e373daa626d9fcca143aa",
+  "main_baseline": "afe2f457cf93092e238d5ed6ba9bc40443e18e3d",
+  "delivery_source_identity": {
+    "live_files": 1671,
+    "canonical_sha256": "ad4dc4d05851cc246b225bb068395d24075d974b434f41aff05886e683d21384",
+    "index_sha256": "2b75f57bc6514c23ecf2eeee7a94e31ef295ff6c5dce6da94deefc382eba7219",
+    "excluded_records": [
+      "PROGRESS.md",
+      "docs/acceptance/evidence/pr160-review-final.json",
+      "docs/acceptance/pr160-review.md",
+      "docs/open-questions.md"
+    ],
+    "scope": "Mode/bytes identity inventory; actual consumed roles are recorded separately, not all inventory files executed."
+  },
+  "rust": {
+    "workspace_graph": "--workspace --locked default graph, jobs1/debug0/incremental0",
+    "metadata_targets": 115,
+    "default_test_targets": 111,
+    "passed": 1255,
+    "failed": 0,
+    "ignored": 24,
+    "latest_whole_target_replacements": 65,
+    "latest_same_binary_retained": 46,
+    "physical_target_attempts": 212,
+    "attempt_breakdown": [
+      44,
+      101,
+      2,
+      65
+    ],
+    "original_zero_dispatch_compile_failure_retained": true,
+    "doc_inventory": {
+      "groups": 10,
+      "examples": 0,
+      "first_actual_results_recorded": true,
+      "after_latest_backend_edit_new_doc_compilation_credit": false
+    },
+    "effective_result_groups_including_zero_doc_inventory": 121,
+    "physical_result_groups_including_zero_doc": 222,
+    "final_map_sha256": "78a6d94521aa29d684689172ab42f8eff309614816b012c33f1e7d46ef11a014",
+    "final_effective_summary_sha256": "ed07dbdc1eae21de07368f5c1096b498df98f098cd07a6788ec8612ec5b40b02",
+    "direct_project_dependencies": 794,
+    "generated_inputs": 2,
+    "direct_depinfo_is_full_transitive_io_trace": false,
+    "debug_embedded_frontend": {
+      "complete_methods": 2,
+      "assets": 35,
+      "get_head_checks_including_root_alias": 72,
+      "formal_release_build": false
+    },
+    "bounded_delivery_sha256": "7598e66849922eb6a39f1ad35dd3a833abb02bc8360f53c7bb81189dd328235e"
+  },
+  "real_local_passkey": {
+    "complete_methods_passed": 1,
+    "physical_method_attempts": 3,
+    "actual_browser_attempts": 2,
+    "first_missing_browser_dispatch_credit": 0,
+    "final_pages": 4,
+    "final_contexts": 4,
+    "final_requests": 150,
+    "final_private_api_requests": 132,
+    "final_private_api_writes": 73,
+    "external_attempts": 0,
+    "page_errors": 0,
+    "default_ignored_stays": 24,
+    "proof_sha256": "b621f03116ecf7fdeef6f077e92d91008ced6fb9b9d2f398675fdea42f11b313",
+    "hardware_key_or_production_acceptance": false
+  },
+  "web": {
+    "bun_passed": 176,
+    "bun_failed": 0,
+    "expectations": 2316,
+    "files": 32,
+    "forced_typescript_runs": 1,
+    "vite_runs": 1,
+    "dist_files": 35,
+    "dist_bytes": 1339032,
+    "dist_manifest_sha256": "ccb533e849f8bc3c496b11b31c183c8c40c9cba03517b2701f7705c7e2479f6b",
+    "isolated_fixture_groups": 49,
+    "fixture_physical_attempts": 78,
+    "original_fixture_failures": 29,
+    "fixture_pages": 292,
+    "fixture_requests": 16853,
+    "fixture_private_api_writes": 718,
+    "fixture_external_attempts": 0,
+    "fixture_page_errors": 0,
+    "normal_closes_effective": 49,
+    "normal_closes_physical": 75,
+    "all_78_owned_groups_reaped": true,
+    "current_relation_sha256": "cc69d6aa2ccf2fb5300355e383b115dbc902dfdc14010413a746b928475fabad",
+    "bounded_physical_receipts_sha256": "458b87407edb95ff09b0bf8582ece6093130b1913a02a37bd83ac29bc12805cd",
+    "passkey_counted_separately": true
+  },
+  "python": {
+    "effective_whole_scopes": 79,
+    "physical_dispatches": 84,
+    "complete_methods_passed": 988,
+    "method_skips": 140,
+    "partial_parent_with_subtest_skips": 1,
+    "unstarted_methods_in_setup_class_skips": 35,
+    "setup_class_skips": 4,
+    "recorded_passed_callback_cases": 2357,
+    "callback_cases_are_certified_unique_nested_leaf_count": false,
+    "native_controller_or_full_tool_opt_ins_run": false,
+    "proof_sha256": "eaae4649293bd4ef6a0a95fdf3dceec43553d885962ccf43e3c9b1e88b7110e5"
+  },
+  "static": {
+    "python_ast_distinct": 184,
+    "python_ast_physical_commands": 189,
+    "node_syntax_distinct": 56,
+    "core_current_sources": 159,
+    "core_physical_checker_commands": 3,
+    "gnu_shell_distinct": 13,
+    "gnu_shell_commands": 13,
+    "final_fmt_passed": true,
+    "final_workspace_all_targets_clippy_passed": true,
+    "last_three_complete_markdown_records": [
+      "PROGRESS.md",
+      "docs/open-questions.md",
+      "docs/acceptance/pr160-review.md"
+    ],
+    "markdown_final_result_location": "Latest private delivery snapshot after frozen document-source checks; unchanged257 original Markdown ranges retained by actual input relationship.",
+    "node_physical_commands": 86,
+    "retained_257_markdown_relation_sha256": "5d7c79f6b5b881f093409e0148afcc374784f1ade048c149be54b12b2a813fe1"
+  },
+  "invariants": {
+    "old_sql_0001_0048_preserved": true,
+    "author_sql_0049_0057_preserved": true,
+    "new_sql_0058": "dns_record_intents",
+    "sql_total": 58,
+    "four_source_workflow_files_preserved": true,
+    "cargo_lock_preserved_from_author": true,
+    "cargo_lock_identical_to_old_main": false,
+    "historical_nq_versions_locks_licenses_helpers_preserved": true,
+    "author_json_and_native_records_are_our_native_replay": false,
+    "inventory_proof_sha256": "59cbdbfdc7a896a2ed7cb30aee5e1e329bed64d18113697b6d1f432b8797e6eb"
+  },
+  "original_failures": {
+    "rust_original_catalog_sha256": "00272201e31d91cceaa04f2fbd886f4562aaee7a5bf01689696f0d7fa4031bf7",
+    "python_original_failed_scopes": 3,
+    "fixture_browser_failed_attempts": 29,
+    "real_passkey_failed_attempts": 2,
+    "repairs_replace_complete_affected_scopes": true,
+    "duplicate_results_added_to_effective_counts": false
+  },
+  "cleanup": {
+    "owned_postgres_stopped": true,
+    "own_port55432_listener": false,
+    "runtime_target_node_modules_screens_removed_paths": 4,
+    "logical_regular_bytes": 10837182380,
+    "observed_available_bytes_delta": 8880222208,
+    "logical_size_is_reclaimed_space": false,
+    "observed_delta_is_solely_attributable_space": false,
+    "cleanup_proof_sha256": "48d8fbbbac4849e79bfa35fe1d8f1404abc436bd8a32d3cea087cfb976277ab7",
+    "raw_review_material": "Retained only while final bounded receipts/document-source checks are being completed; exact owned raw directory is removed before final Git delivery readback. Final cleanup receipt records actual completion.",
+    "old_deleted_pr155_pr157_raw_reconstructed": false,
+    "production_other_tasks_shared_tools_credentials_uncommitted_work_removed": false
+  },
+  "release_and_ci": {
+    "four_source_workflows": "disabled_manually",
+    "dynamic_copilot": "active independently",
+    "unexecuted_ci_is_passed": false,
+    "public_tag": "agent-v0.3.0",
+    "public_tag_peeled": "75cd846f152f61d7b5daa913b31c74579eed3d22",
+    "formal_signing_release_production_deployment": false,
+    "real_dns_cloud_billing_or_notification_writes": false,
+    "issue_writes": false
+  },
+  "unverified": [
+    "24 default ignored methods",
+    "Linux/systemd live protection, disconnect/revocation/ICMP and sustained proxy combined failures",
+    "Windows PS5 UAC/ACL and non-systemd native controls",
+    "Actual terminal, certificate, WireGuard and throughput operations",
+    "Complete NodeQuality tool rights, factory identity,512MiB native closure and dual-architecture rebuild/install/upload",
+    "Actual DNS/cloud resources, billing and notification delivery",
+    "Formal signed release and production deployment"
+  ]
+}

@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -70,6 +71,7 @@ try {
       if (['/metrics', '/probes', '/probe-results', '/commands', '/overview'].some(suffix => path.endsWith(suffix))) return respond([])
       throw new Error(`Unexpected route ${path}`)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/dashboard`)
     await page.locator('.d-card').first().waitFor()
     assert.equal(await page.getByRole('heading', { name: '欢迎回来' }).count(), 0)
@@ -81,6 +83,7 @@ try {
     await page.getByRole('button', { name: '刷新服务器详情' }).click()
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     assert.equal(await page.locator('.d-detail').count(), 0)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/settings`)
     await page.getByRole('heading', { name: '欢迎回来' }).waitFor()
     assert.equal(await page.locator('.sidebar').count(), 0)
@@ -93,7 +96,7 @@ try {
     rejectLogin = false
     await page.getByRole('button', { name: '登录面板' }).click()
     await page.getByRole('heading', { name: '看板与通知', exact: true }).waitFor()
-    assert.deepEqual(sessions.slice(0, 2), [0, 1].map(() => ({ path: '/api/login', body: { password: 'TEST_ONLY', totp_code: '123456' } })))
+    assert.deepEqual(sessions.slice(0, 2), [0, 1].map(() => ({ path: '/api/login', body: { login_name: 'admin', password: 'TEST_ONLY', totp_code: '123456' } })))
     await page.getByRole('switch', { name: /^公开服务器看板/ }).uncheck()
     await page.getByLabel('离线告警阈值（分钟）', { exact: false }).fill('8')
     if (screenshots) await page.screenshot({ path: resolve(screenshots, `operations-settings-${width}.png`), fullPage: true, animations: 'disabled' })

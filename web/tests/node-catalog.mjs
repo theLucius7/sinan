@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
@@ -103,6 +104,7 @@ try {
     const library = page.getByRole('region', { name: '节点库' }), dialog = page.getByRole('dialog')
     const row = name => width < 768 ? library.locator('.catalog-card').filter({ has: page.getByText(name, { exact: true }) }) : library.getByRole('row').filter({ has: page.getByText(name, { exact: true }) })
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/nodes`)
       await row('外部 01').waitFor(); await row('受管节点').getByText('managed.example.com:8443', { exact: true }).waitFor()
       assert.equal(await row('受管节点').getByText('0 B', { exact: true }).count(), 1)

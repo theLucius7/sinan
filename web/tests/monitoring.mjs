@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -80,6 +81,7 @@ try {
       if (path === '/api/notifications') return respond(['offline', 'resource', 'expiry', 'traffic'].map((category, index) => ({ id: index + 1, category, message: `测试事件 ${category}`, server_id: 1, server_name: '东京服务器', last_seen: second - 600, opened_at: second - 300, resolved_at: index === 1 ? second : null, resolution: index === 1 ? 'recovered' : null, deliveries: [{ kind: index === 0 ? 'offline' : 'alert', status: 'pending', attempts: 1, last_error: '测试：等待重试' }] })))
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/latency`)
     await page.getByRole('heading', { name: '延迟检测', exact: true }).waitFor()
     await page.getByRole('button', { name: '添加任务', exact: true }).click()

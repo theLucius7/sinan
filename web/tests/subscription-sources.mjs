@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -146,6 +147,7 @@ try {
       await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true })
       await page.screenshot({ animations: 'disabled', path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `sources-${name}-${width}.png`) })
     }
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await enable(manager.getByRole('button', { name: '添加订阅来源', exact: true }))
     assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅来源', exact: true }).count(), 0)

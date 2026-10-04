@@ -79,7 +79,7 @@ try {
   results.push('administrator registration through shipped UI with required user verification')
   await page.locator('.logout-button').click()
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
-  await page.getByRole('button', { name: '使用 Passkey 登录', exact: true }).click()
+  await page.getByRole('button', { name: '使用初始所有者 Passkey 登录', exact: true }).click()
   await page.getByRole('heading', { name: '系统管理员', exact: true }).waitFor()
   assert.equal((await request(page, '/api/me', undefined, 'GET')).status, 200)
   results.push('administrator passwordless login and admin cookie')

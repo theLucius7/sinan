@@ -39,6 +39,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/operations/jobs/{id}/resume", post(api::resume))
         .route("/api/operations/jobs/{id}/reconcile", post(api::reconcile))
         .route(
+            "/api/operations/jobs/{id}/inspection",
+            post(api::inspect_reconciliation),
+        )
+        .route(
             "/api/operations/jobs/{id}/panel-backup/reconcile",
             post(panel_job_backup::reconcile),
         )

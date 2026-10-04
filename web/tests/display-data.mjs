@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // Isolated browser fixtures for live visibility, aggregate history and real FX data.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -119,6 +120,7 @@ try {
       await page.evaluate(() => window.dispatchEvent(new Event('online')))
       await response
     }
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/dashboard`)
     await page.locator('.d-card').first().waitFor()
     const costs = page.locator('.d-overview-item').filter({ has: page.getByText('资产', { exact: true }) })
@@ -129,11 +131,13 @@ try {
     assert.equal(await page.getByLabel('显示币种', { exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: '更新汇率', exact: true }).count(), 0)
     const changeCurrency = async code => {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/system/settings`)
       const settings = page.locator('.exchange-rate-settings')
       await settings.getByLabel('显示币种', { exact: false }).selectOption(code)
       await settings.getByRole('button', { name: '保存显示币种', exact: true }).click()
       assert.equal(await page.evaluate(() => localStorage.getItem('sinan-display-currency')), code)
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/dashboard`)
       await page.locator('.d-card').first().waitFor()
     }
@@ -144,6 +148,7 @@ try {
     assert.match(await costs.innerText(), /汇率缺失/)
     await changeCurrency('CNY')
     assert.equal(writes.length, 0, 'Changing the display preference does not write server settings or fetch provider rates')
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/settings`)
     const exchange = page.locator('.exchange-rate-settings')
     await exchange.getByRole('button', { name: '更新汇率', exact: true }).click()
@@ -164,6 +169,7 @@ try {
     await exchange.getByRole('button', { name: '重新读取', exact: true }).click()
     await exchange.getByText('测试：缓存读取失败', { exact: false }).waitFor({ state: 'hidden' })
     if (screenshots && width !== 320) await exchange.screenshot({ path: resolve(screenshots, `exchange-settings-${width}.png`) })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/dashboard`)
     await page.locator('.d-card').first().waitFor()
     const cardReference = page.locator('.d-card').first().getByRole('status', { name: '参考汇率状态', exact: true })

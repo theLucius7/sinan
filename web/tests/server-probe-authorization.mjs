@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -65,6 +66,7 @@ try {
       if (path === '/api/servers/1/commands' || path === '/api/servers/1/metrics' || path === '/api/probes/overview') return respond([])
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
     const panel = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) })
     await panel.getByText('未取得执行授权', { exact: false }).waitFor()

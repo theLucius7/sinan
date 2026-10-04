@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -47,6 +48,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
  else throw Error('Unexpected API '+path);
  await route.fulfill({json:data});
  });
+ await installControlCenterFixtures(page)
  await page.goto(`${origin}/#/servers/1/tcp-quality`);
  await page.getByRole('heading',{name:'TCP 连接诊断'}).waitFor();
  const completed=page.locator('article.quality-report').filter({hasText:'完成结果目标'});

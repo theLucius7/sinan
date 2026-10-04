@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -117,6 +118,7 @@ try {
     const directKey = id => page.locator(`${width < 768 ? '.catalog-card' : '.catalog-table tbody tr'}[data-resource-key="direct:${id}"]`)
     const resourceCount = async () => await catalogRows.count() + await page.locator('.proxy-resource-table tbody tr').count()
     const waitCount = async count => { const deadline = Date.now() + 8000; while (await resourceCount() !== count) { assert(Date.now() < deadline, `Expected ${count} visible resources`); await page.waitForTimeout(20) } }
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await enabled(create)
     assert.equal(await resourceCount(),4)

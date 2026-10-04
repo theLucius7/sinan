@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -195,6 +196,7 @@ try {
       await noWrites(() => forceDelete(dialog), 'disabled and direct delete callbacks must send zero DELETEs')
     }
 
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains`)
     await enabled(createButton)
     await oldRow.waitFor()
@@ -284,6 +286,7 @@ try {
     await creating.getByRole('button', { name: '取消', exact: true }).click()
     await page.getByRole('dialog').waitFor({ state: 'hidden' })
     await recover(`${prefix}/servers`, null, async () => assert.equal(writes.length, 2))
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=2`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     // The cancelled server=1 draft survives this route change and must not silently retarget server=2.
@@ -291,6 +294,7 @@ try {
     assert.equal(await createButton.isDisabled(), true)
     await noWrites(() => forceOpeners(false), 'The preserved entry draft conflicts with the current server filter')
     assert.equal(await page.getByRole('dialog').count(), 0)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '')
     await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption('')
@@ -301,6 +305,7 @@ try {
     await creating.getByRole('button', { name: '取消', exact: true }).click()
     await creating.waitFor({ state: 'hidden' })
     assert.equal(writes.length, 2, 'Explicitly choosing the new scope edits only the local draft')
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=2`)
     await page.waitForFunction(() => document.querySelector('select[aria-label="按服务器筛选"]')?.value === '2')
     await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption('2')

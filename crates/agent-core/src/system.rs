@@ -114,6 +114,58 @@ impl SystemOps {
 }
 
 impl Privileged for SystemOps {
+    fn lock_managed_state<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> sinan_adapter_sdk::BoxFuture<'a, Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            {
+                managed_files::lock(path).await
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = path;
+                anyhow::bail!("managed state locking requires Linux")
+            }
+        })
+    }
+    fn snapshot_managed_file<'a>(
+        &'a self,
+        path: &'a Path,
+        maximum: usize,
+    ) -> sinan_adapter_sdk::BoxFuture<'a, serde_json::Value> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            {
+                managed_files::snapshot(path, maximum).await
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = (path, maximum);
+                anyhow::bail!("managed snapshots require Linux")
+            }
+        })
+    }
+    fn update_managed_file<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: Option<&'a [u8]>,
+        expected: &'a serde_json::Value,
+        metadata: &'a serde_json::Value,
+    ) -> sinan_adapter_sdk::BoxFuture<'a, serde_json::Value> {
+        Box::pin(async move {
+            #[cfg(target_os = "linux")]
+            {
+                managed_files::update(path, bytes, expected, metadata).await
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = (path, bytes, expected, metadata);
+                anyhow::bail!("managed metadata updates require Linux")
+            }
+        })
+    }
     #[cfg(target_os = "linux")]
     fn read_managed_file<'a>(&'a self, path: &'a Path, maximum: usize) -> BoxFuture<'a, Vec<u8>> {
         Box::pin(managed_files::read(path, maximum))

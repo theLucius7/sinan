@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -44,6 +45,7 @@ try {
       if(path==='/api/notifications')return reply([{id:1,category:'resource',message:'CPU 95%',server_id:1,server_name:'渠道测试服务器',last_seen:now,opened_at:now-60,resolved_at:null,resolution:null,deliveries:[{id:1,channel:'telegram',kind:'alert',status:'sent',attempts:1,last_error:null,delivered_at:now-20},{id:2,channel:'webhook',kind:'alert',status:'pending',attempts:2,last_error:'Webhook HTTP 429',next_attempt_at:now+123}]}])
       errors.push(`${method} ${path}`);return reply({error:'Unexpected API'},404)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/system/settings`)
     const panel=page.locator('section').filter({has:page.getByRole('heading',{name:/^Webhook 通知/})})
     await panel.getByLabel('通知服务预设',{exact:false}).waitFor()
@@ -64,7 +66,8 @@ try {
     await panel.getByRole('status').filter({hasText:'Webhook 设置已保存'}).waitFor()
     assert.equal(writes[0].preset,'gotify');assert.ok(writes[0].headers.includes('TEST_ONLY_HEADER_SECRET'))
     for(const label of ['Webhook 地址','Webhook 请求头（可选）','Webhook JSON 模板'])assert.equal(await panel.getByLabel(label,{exact:false}).inputValue(),'')
-    assert.equal((await page.locator('body').textContent()).includes('TEST_ONLY'),false)
+    const savedText = await page.locator('body').textContent()
+    for (const secret of ['TEST_ONLY_URL_SECRET', 'TEST_ONLY_HEADER_SECRET', 'TEST_ONLY_BODY_SECRET']) assert.equal(savedText.includes(secret), false, 'Saved notification secrets never appear in rendered text')
     await panel.getByRole('button',{name:'测试 Webhook',exact:true}).click()
     await panel.getByRole('alert').filter({hasText:'HTTP 429'}).waitFor()
     await page.locator('.notification-channel-grid').getByText(/最近测试：.*未成功/).waitFor()
@@ -84,6 +87,7 @@ try {
     await panel.getByRole('button',{name:'确认删除 Webhook',exact:true}).click()
     await panel.getByRole('status').filter({hasText:'配置已删除'}).waitFor()
     assert.equal(await panel.getByRole('button',{name:'测试 Webhook',exact:true}).isDisabled(),true)
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/system/notifications`)
     await page.getByText(/Telegram · 告警：已发送/).waitFor()
     await page.getByText(/Webhook · 告警：等待发送或重试/).waitFor()

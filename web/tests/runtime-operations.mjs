@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -33,6 +34,12 @@ try {
       else if (path === '/api/me') value = { authenticated:true }
       else if (path === '/api/servers/1') value = server
       else if (path === '/api/plugins/sing-box/servers/1') value = metadata
+      else if (path === '/api/plugins/sing-box/servers/1/operations-view' && method === 'GET') value = {
+        runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY no runtime version evidence', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY read-only fixture' } },
+        preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+        drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY no actual configuration checkpoint', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY no process or file evidence' } },
+        changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY no path evidence',
+      }
       else if (path.endsWith('/runtime-operations')) {
         if (method === 'POST') {
           const body = route.request().postDataJSON(); writes.push(body)
@@ -51,6 +58,7 @@ try {
       return route.fulfill({json:value})
     })
     const url=`http://127.0.0.1:${httpServer.address().port}/#/servers/1`
+    await installControlCenterFixtures(page)
     await page.goto(url)
     const operations=page.locator('.runtime-operations')
     await operations.getByRole('button',{name:'读取状态与日志',exact:true}).click()

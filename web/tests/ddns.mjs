@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -37,6 +38,7 @@ try {
       if (method === 'GET') reads.push(path)
       if (method === 'GET' && held?.path === path) { ++held.reached; await held.promise }
       if (path === '/api/dashboard/access') return respond({ authenticated, public_dashboard: false })
+      if (path === '/api/plugins/ddns/accounts' && method === 'GET') return respond([])
       if (path === '/api/plugins/ddns/servers') return failServers ? respond({ error: '测试：服务器状态不可用' }, 503) : respond(servers)
       if (path === '/api/plugins/ddns/servers/1/enable') { servers[0].enabled = true; return respond({ enabled: true }) }
       if (path === '/api/plugins/ddns/servers/1/disable') { servers[0].enabled = false; rules.forEach(rule => { rule.plugin_enabled = false }); return respond({ enabled: false }) }
@@ -70,8 +72,10 @@ try {
       unexpected.push(`${method} ${path}`)
       return respond({ error: 'Unexpected request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/ddns`)
     await page.getByRole('heading', { name: '动态域名解析', exact: true }).waitFor()
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/ddns`)
     await page.getByRole('heading', { name: '动态域名解析', exact: true }).waitFor()
     assert.equal(await page.getByText('另一台服务器', { exact: false }).count(), 0)
@@ -233,11 +237,13 @@ try {
     await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new Event('visibilitychange')) })
     await advance(15_000)
     assert.equal(reads.length, hiddenReads, 'Hidden tabs do not poll DDNS state')
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/999/ddns`)
     await page.getByText('指定服务器不存在或不可用。', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '添加规则' }).isDisabled(), true, 'An unknown scoped server cannot fall back to an enabled server')
     assert.equal(await page.getByText('另一台服务器', { exact: false }).count(), 0)
     failRules = true
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/ddns`)
     await page.getByRole('heading', { name: '规则状态暂不可用', exact: true }).waitFor()
     assert.match(await page.locator('.panel-heading').last().innerText(), /— \/ 32 条/)

@@ -48,6 +48,9 @@ async fn cancellation_crosses_real_agent_websocket_http_and_recovers_after_resta
         Ok(capabilities.as_array().is_some_and(|caps| {
             caps.iter()
                 .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CANCEL_CAPABILITY)
+                && caps
+                    .iter()
+                    .any(|cap| cap == sinan_protocol::DIAGNOSTIC_CPU_CEILING_CAPABILITY)
         }))
     })
     .await?;

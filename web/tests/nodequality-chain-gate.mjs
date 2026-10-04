@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -59,6 +60,7 @@ try {
     else throw new Error(`Unexpected API request: ${path}`)
     await route.fulfill({ json: value })
   })
+  await installControlCenterFixtures(page)
   await page.goto(`http://127.0.0.1:${server.address().port}/#/servers/1/node-quality`)
   await page.getByText(reason, { exact: true }).waitFor()
   const full = page.getByRole('button', { name: '完整验机', exact: true })

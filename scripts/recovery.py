@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -18,7 +19,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote
 
 FILES = ("environment", "database.dump", "panel-data.tar.gz")
 
@@ -136,12 +137,10 @@ def env_values(directory):
         key, separator, value = line.partition("=")
         if separator and key.startswith("SINAN_"):
             values[key] = value.strip().strip("\"'")
-    if not values.get("SINAN_DB_PASSWORD"):
-        database_url = urlsplit(values.get("SINAN_DATABASE_URL", ""))
-        if database_url.password:
-            values["SINAN_DB_PASSWORD"] = unquote(database_url.password)
-        else:
-            raise Failure("环境备份缺少数据库凭据。")
+    # The target is a fresh, owned database. Its login must not depend on the
+    # source pool's userinfo, query-password override, pgpass or process env.
+    # SQL dump ownership is deliberately stripped during isolated restore.
+    values["SINAN_DB_PASSWORD"] = secrets.token_urlsafe(32)
     return values
 
 

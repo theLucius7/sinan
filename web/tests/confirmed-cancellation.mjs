@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -49,6 +50,7 @@ try {
     await route.fulfill({ json: value })
   })
   const origin = `http://127.0.0.1:${server.address().port}`
+  await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/servers/1/node-quality`)
   record.status = 'cleaning'
   record.error = '原执行结果：测试超时；清理原因：设备仍有活动进程或挂载'

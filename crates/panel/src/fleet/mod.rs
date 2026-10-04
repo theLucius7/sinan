@@ -2,7 +2,7 @@ mod assets;
 mod enrollment;
 pub(crate) mod monitoring;
 mod operations;
-mod reconciliation;
+pub(crate) mod reconciliation;
 mod terminal;
 pub(crate) use operations::{
     enqueue_automation_tx, enqueue_for_actor, enqueue_readonly_for_actor_tx,

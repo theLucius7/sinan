@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -10,6 +11,13 @@ import { flatResourceFixtures, proxyResourceFixtures } from './proxy-resource-fi
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
+// TEST_ONLY independent read-only view; no actual preflight or device evidence.
+const operationsViewFixture = {
+  runtime: { supported_versions: [], selected_version: 'TEST_ONLY', reason: 'TEST_ONLY 未读取真实运行时版本。', compatibility_metadata: { upstream_release: 'https://example.com/TEST_ONLY', upstream_commit: 'TEST_ONLY', protocols: [], acceptance_scope: 'TEST_ONLY 只读夹具' } },
+  preflight: { id: null, ready: false, confirmed: false, device_checks_pending: false, checks: [] },
+  drift: { state: 'unknown', target_revision: null, applied_revision: null, last_observed_at: null, reason: 'TEST_ONLY 无真实配置检查点。', checkpoint_supported: false, checkpoint: { state: 'unknown', observed_at: null, reason: 'TEST_ONLY 未读取进程或文件。' } },
+  changes: [], history: [], paths: [], hop_observations: [], path_diagnosis: 'TEST_ONLY 无真实路径证据。',
+}
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://127.0.0.1').pathname
   const file = resolve(root, path === '/' ? 'index.html' : `.${path}`)
@@ -62,6 +70,7 @@ try {
       if (path === '/api/me') value = { authenticated: true }
       else if (path === '/api/servers/1') value = entry
       else if (path === '/api/plugins/sing-box/servers/1') value = metadata
+      else if (route.request().method() === 'GET' && !new URL(route.request().url()).search && path === '/api/plugins/sing-box/servers/1/operations-view') value = operationsViewFixture
       else if (path === '/api/plugins/sing-box/servers') {
         if (pluginServersFailure) { await route.fulfill({ status: 500, json: { error: '服务器夹具读取失败' } }); return }
         value = chainFixtures ? [metadata, exitMetadata, ...otherMetadata] : [metadata]
@@ -134,6 +143,7 @@ try {
       await route.fulfill({ json: value })
     })
     const origin = `http://127.0.0.1:${server.address().port}`
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
     await page.getByRole('heading', { name: metadata.name, exact: true }).waitFor()
     await page.waitForFunction(() => document.querySelector('table')?.textContent.includes('eth0'))
@@ -168,6 +178,7 @@ try {
     metadata.installation = { state: 'ready', reason: '设备已确认 sing-box 安装并运行。', target_rev: 1, applied_rev: 1 }
     await page.reload()
     await page.getByText('已安装并运行', { exact: true }).waitFor()
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
     await page.getByRole('heading', { name: '配置部署', exact: true }).waitFor()
     await page.getByText('插件代理节点', { exact: true }).waitFor()
@@ -187,6 +198,7 @@ try {
 
     // The server plugin route reads only this server and keeps conservative ACK semantics.
     const scopedStart = requests.length
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/plugins`)
     await page.getByRole('heading', { name: '服务器插件', exact: true }).waitFor()
     await page.getByText('安装状态待确认', { exact: true }).waitFor()
@@ -217,8 +229,8 @@ try {
     await nodeEditor.getByText('协议高级设置', { exact: true }).click()
     await nodeEditor.locator('input[name="handshake_server"]').fill('handshake.example.com')
     await nodeEditor.locator('select[name="fingerprint"]').selectOption('firefox')
-    await nodeEditor.getByRole('button', { name: '保存并自动发布', exact: true }).click()
-    await page.getByText('资源已保存，正在等待自动发布与设备应用。', { exact: true }).waitFor()
+    await nodeEditor.getByRole('button', { name: '保存目标配置', exact: true }).click()
+    await page.getByText('目标已保存；新增有效监听或部署配置变化须完整预检确认，实际应用等待设备回执。', { exact: true }).waitFor()
     await editedCatalogNode.getByText('已停用', { exact: true }).waitFor()
     await editedCatalogNode.getByText('proxy.example.com:8443', { exact: true }).waitFor()
     // The catalog shows the public endpoint. Reopen the persisted node rather
@@ -231,18 +243,18 @@ try {
     assert.equal(await persistedNodeEditor.locator('input[name="enabled"]').isChecked(), false)
     await persistedNodeEditor.getByRole('button', { name: '取消', exact: true }).click()
     assert.deepEqual(mutations.slice(nodeMutationStart), [{ path: '/api/plugins/sing-box/nodes/2', method: 'PATCH' }])
-    await page.getByRole('button', { name: '查看部署进度', exact: true }).click()
+    await page.getByRole('button', { name: '查看差异、完整预检与发布状态', exact: true }).click()
     const deploymentDialog = page.getByRole('dialog')
-    await deploymentDialog.getByText('等待合并发布', { exact: true }).waitFor()
+    await deploymentDialog.getByText('目标配置待发布', { exact: true }).waitFor()
     assert.equal(await deploymentDialog.getByText('目标配置已应用', { exact: true }).count(), 0)
     await deploymentDialog.getByText('链路出口可能凭内部连接凭据监听。', { exact: false }).waitFor()
     metadata.installation = { state: 'ready', reason: '设备已确认目标配置，健康检查通过。', target_rev: 2, applied_rev: 2 }
-    await deploymentDialog.getByRole('button', { name: '刷新', exact: true }).click()
+    await deploymentDialog.locator('.node-deployment > .node-deployment-heading').getByRole('button', { name: '刷新', exact: true }).click()
     await deploymentDialog.getByText('目标配置已应用', { exact: true }).waitFor()
     // A failed GET retains a historical snapshot in the resource hook, but the
     // deployment dialog must withhold the current application confirmation.
     deploymentFailure = true
-    await deploymentDialog.getByRole('button', { name: '刷新', exact: true }).click()
+    await deploymentDialog.locator('.node-deployment > .node-deployment-heading').getByRole('button', { name: '刷新', exact: true }).click()
     await deploymentDialog.getByText('部署夹具读取失败', { exact: true }).waitFor()
     await deploymentDialog.getByText('应用状态待确认', { exact: true }).waitFor()
     assert.equal(await deploymentDialog.getByText('目标配置已应用', { exact: true }).count(), 0)
@@ -334,6 +346,7 @@ try {
     assert.equal(await resourceDetail.getByText('目标配置已应用', { exact: true }).count(), 2)
     await closeResourceDetail()
 
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=3`)
     await page.getByText('无关服务器链路', { exact: true }).waitFor()
     await page.getByText('设备状态与目标版本尚未确认一致，请查看服务器详情。', { exact: true }).waitFor()
@@ -344,11 +357,13 @@ try {
     await page.getByText('筛选范围：全部服务器的链路。', { exact: true }).waitFor()
     await page.getByText('未授权验收链路', { exact: true }).waitFor()
     assert.equal(await page.locator('.proxy-resource-table').getByRole('row').count(), 4)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=999`)
     await page.getByText('此服务器暂无已确认关联的链路', { exact: true }).waitFor()
     assert.equal(await page.getByText('未授权验收链路', { exact: true }).count(), 0)
 
     // A failed refresh must stop treating the previous successful snapshot as current.
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?kind=chains&server=1`)
     createdRow = page.getByRole('row').filter({ has: page.getByText('未授权验收链路', { exact: true }) })
     await createdRow.getByText('目标配置已应用', { exact: true }).first().waitFor()
@@ -384,6 +399,7 @@ try {
     assert.equal(await page.locator(`${width < 768 ? '.catalog-card' : '.catalog-table tbody tr'}[data-resource-key="direct:2"]`).count(),0)
     await page.getByText('普通节点需为代理用户授权并等待设备成功应用配置', { exact: false }).waitFor()
     await page.getByText('出口可使用内部连接凭据监听，无需为出口单独授权用户。', { exact: false }).waitFor()
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     await page.getByRole('button', { name: /· 1 个引用$/ }).waitFor()
     chainsFailure = true
@@ -401,6 +417,7 @@ try {
     assert.equal(await page.getByText('为代理用户授权后，节点会自动启用。', { exact: false }).count(), 0)
     nodesEmpty = false
 
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
     await page.getByRole('button', { name: '接入 / 升级', exact: true }).click()
     const enrollment = page.getByRole('dialog')

@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -41,6 +42,7 @@ try {
       await route.fulfill({ json:data })
     })
     const catalogRows = page.locator(width < 768 ? '.catalog-card' : '.catalog-table tbody tr')
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes?server=2`)
     await page.getByRole('heading', { name:'代理节点', exact:true }).waitFor({ timeout:3000 })
     await page.waitForFunction(() => document.querySelector('[aria-label="按服务器筛选"]')?.value === '2')

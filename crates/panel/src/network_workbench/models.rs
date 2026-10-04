@@ -708,6 +708,8 @@ pub struct Execution {
     pub schema: u32,
     pub source_server: Option<i64>,
     pub target: Option<Target>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latency_target: Option<Target>,
     pub check: Check,
     pub budget: Budget,
     pub role: String,

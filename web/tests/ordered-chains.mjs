@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import { catalogResourceFixtures } from './proxy-resource-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -99,6 +100,7 @@ try {
     const fieldSelect = (scope, label) => scope.locator('label.field').filter({ has: page.getByText(label, { exact: true }) }).locator('select')
     const poll = () => page.clock.fastForward(5000)
     const shot = async name => { if (!process.env.SINAN_UI_SCREENSHOT_DIR) return; await mkdir(process.env.SINAN_UI_SCREENSHOT_DIR, { recursive: true }); await page.locator('[role=dialog]').evaluateAll(dialogs => { for (const dialog of dialogs) for (const animation of (dialog.closest('.modal-shade') ?? dialog).getAnimations({ subtree: true })) if (animation.effect?.getComputedTiming().iterations !== Infinity) animation.finish() }); await page.screenshot({ animations: 'disabled', path: resolve(process.env.SINAN_UI_SCREENSHOT_DIR, `ordered-${name}-${width}.png`) }) }
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/nodes`)
     const create = page.getByRole('button', { name: '创建有序链路', exact: true }); await enabled(create)
     await page.getByRole('combobox', { name: '按服务器筛选', exact: true }).selectOption('3')

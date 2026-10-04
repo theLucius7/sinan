@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -47,6 +48,7 @@ try {
       else {errors.push(`${method} ${path}`);return route.fulfill({status:404,json:{error:'Unexpected API'}})}
       await route.fulfill({json:value})
     })
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/servers/1`)
     const panel=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'远程命令',exact:true})})
     const record=id=>panel.locator('details').filter({has:page.locator('pre',{hasText:`echo fixture-${id}`})})

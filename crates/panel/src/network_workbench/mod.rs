@@ -1,11 +1,14 @@
 //! Typed network and hardware workbench using the shared diagnostic lifecycle.
 mod api;
+mod authorization;
 mod engine;
 mod http_probe;
 mod models;
 mod plugin;
+mod prepare;
 mod reports;
 use crate::AppState;
+pub(crate) use authorization::delivery as authorize_delivery;
 use axum::{
     Router,
     routing::{get, patch, post},

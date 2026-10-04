@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -26,6 +27,7 @@ try {
   page.on('pageerror', e => errors.push(e.message))
   const now = Math.floor(Date.now() / 1000), month = new Date((now + 28800) * 1000).toISOString().slice(0, 7)
   let overview = { accounts: [], resources: [], operations: [], power_jobs: [], events: [] }, failRead = false, failConfirm = true, failPowerConfirm = true
+  const credentialId = 'a0000000-0000-4000-8000-000000000160'
   const powerPolicy = { enabled: false, stop_mode: 'KeepCharging', threshold_action: 'off', limit_gb: 100, threshold_percent: 95, schedule_enabled: false, start_time: '08:00', stop_time: '23:00', utc_offset_minutes: 480, keepalive: false }
   const powerState = { cloud_id: 'i-testonly', region: 'cn-hangzhou', status: 'Running', stopped_mode: 'KeepCharging', charge_type: 'PostPaid', network_type: 'vpc', spot_strategy: 'SpotAsPriceGo', interruption_behavior: 'Stop', public_ips: ['192.0.2.1'], locked: false }
   const snap = { kind: 'ecs', cloud_id: 'i-testonly', region: 'cn-hangzhou', public_ip: '192.0.2.1', bandwidth_mbps: 10, charge_type: 'PayByTraffic', resource_charge_type: 'PostPaid', status: 'Running' }
@@ -37,14 +39,16 @@ try {
     if (method !== 'GET') writes.push({ path, method, body })
     if (path === '/api/plugins/alicloud/accounts' && method === 'POST') {
       assert.equal(body.auto_enabled, false)
-      assert.equal(body.access_key_id, 'TEST_ONLY_ID')
-      assert.equal(body.access_key_secret, 'TEST_ONLY_SECRET')
+      assert.equal(body.credential_id, credentialId)
+      for (const field of ['access_key_id', 'access_key_secret', 'legacy_credentials']) assert.equal(Object.hasOwn(body, field), false, 'New cloud accounts contain only the encrypted credential reference')
       overview.accounts.push({ ...body, access_key_id: undefined, access_key_secret: undefined, id: 'account', revision: 1, balance: { available: '1234.5600', currency: 'USD', queried_at: now }, balance_error: null, error_code: null, traffic_error: null, next_run_at: now + 300, traffic: { queried_at: now, mainland_bytes: '1073741824', overseas_bytes: '2147483648', regions: [{ region: 'cn-hangzhou', bytes: '1073741824' }] }, bill: { month, queried_at: now, usage_micro_gb: 10000000, rows: [{ instance_id: 'test', region: '测试地域', billing_item: '公网流量', product_type: 'cdt', usage: '10', unit: 'GB', amount: '0.00', currency: 'CNY' }] } })
       return respond({ id: 'account' }, 201)
     }
     if (path === '/api/plugins/alicloud/accounts/account' && method === 'PATCH') {
       assert.equal(body.revision, overview.accounts[0].revision)
-      assert.equal(Object.hasOwn(body, 'access_key_secret'), false)
+      for (const field of ['access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(body, field), false, 'An unchanged credential never replays plaintext')
+      if (Object.hasOwn(body, 'credential_id')) assert.equal(body.credential_id, credentialId)
+      else assert.equal(body.legacy_credentials, true)
       overview.accounts[0] = { ...overview.accounts[0], ...body, revision: body.revision + 1 }
       return route.fulfill({ status: 204 })
     }
@@ -93,22 +97,46 @@ try {
     }
     unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
   })
+  await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/plugins/alicloud`)
   await page.getByRole('heading', { name: '阿里云 CDT 与带宽', exact: true }).waitFor()
   await page.getByRole('button', { name: '添加云账号' }).click()
   let dialog = page.getByRole('dialog')
   await dialog.getByLabel('账号名称').fill('测试云账号')
-  await dialog.getByLabel('访问密钥 ID').fill('TEST_ONLY_ID')
-  await dialog.getByLabel('访问密钥 Secret').fill('TEST_ONLY_SECRET')
+  await dialog.getByLabel(/^云凭据标识/).fill(credentialId)
+  assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'center')
+  assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
   assert.equal(await dialog.getByLabel('达到阈值时').isChecked(), false)
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await page.getByRole('heading', { name: '测试云账号' }).waitFor()
   assert.equal((await page.locator('body').innerText()).includes('TEST_ONLY_SECRET'), false)
   await page.getByRole('button', { name: '编辑账号与策略' }).click()
   dialog = page.getByRole('dialog')
-  assert.equal(await dialog.getByLabel('访问密钥 Secret').inputValue(), '')
+  assert.equal(await dialog.getByLabel(/^云凭据标识/).inputValue(), credentialId)
+  assert.equal(await dialog.getByLabel(/访问密钥/).count(), 0)
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
+  // Re-read an existing legacy account, retain both stored credentials without
+  // exposing them, then explicitly move it back to the encrypted reference.
+  overview.accounts[0].credential_id = null; overview.accounts[0].revision++
+  await page.reload()
+  await page.getByRole('button', { name: '编辑账号与策略', exact: true }).click()
+  dialog = page.getByRole('dialog')
+  assert.equal(await dialog.getByLabel(/^凭据来源/).inputValue(), 'legacy')
+  assert.equal(await dialog.getByLabel(/^旧兼容访问密钥 ID/).inputValue(), '')
+  assert.equal(await dialog.getByLabel(/^旧兼容访问密钥 Secret/).inputValue(), '')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  const legacyWrite = writes.at(-1).body
+  assert.equal(legacyWrite.legacy_credentials, true)
+  for (const field of ['credential_id', 'access_key_id', 'access_key_secret']) assert.equal(Object.hasOwn(legacyWrite, field), false)
+  await page.getByRole('button', { name: '编辑账号与策略', exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByLabel(/^凭据来源/).selectOption('center')
+  await dialog.getByLabel(/^云凭据标识/).fill(credentialId)
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(overview.accounts[0].credential_id, credentialId)
   await page.getByRole('button', { name: '登记资源', exact: true }).click()
   dialog = page.getByRole('dialog')
   await dialog.getByLabel('资源名称').fill('测试 ECS')

@@ -1,9 +1,18 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+
+// TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
+// Device state and sensitive template content remain explicitly unavailable.
+const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
+  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+  limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const root = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -37,6 +46,8 @@ try {
       const request = route.request(), url = new URL(request.url()), path = url.pathname
       const respond = json => route.fulfill({ json })
       if (path === '/api/dashboard/access') return respond({ authenticated: mode !== 'unauthorized', public_dashboard: false })
+      if (request.method() === 'GET' && !url.search && path === '/api/plugins/sing-box/users/1/diagnosis') return respond(diagnosisFixture(user))
+      if (request.method() === 'GET' && !url.search && path === '/api/plugins/sing-box/users/1/client-template') return respond(templateFixture)
       if (path === '/api/plugins/sing-box/users/1/portal') return respond({ configuration: { enabled: false, reason: 'TEST_ONLY 未启用', origin }, keys: 0, url: null, activation_expires_at: null })
       if (path === '/api/plugins/sing-box/users/1/external-accesses' && request.method() === 'GET') return respond({ revision: 0, accesses: [], available_nodes: [] })
       if (path === '/api/plugins/sing-box/users') return respond([user])
@@ -65,6 +76,7 @@ try {
       }
       unexpected.push(path); return route.fulfill({ status: 500, json: { error: 'Unexpected API' } })
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/plugins/sing-box/users`)
     await page.getByRole('button', { name: '订阅链接', exact: true }).click()
     let dialog = page.getByRole('dialog')
@@ -169,6 +181,7 @@ try {
     if (path === '/api/dashboard/access') return route.fulfill({ json: { authenticated: false, public_dashboard: true } })
     privateRequests.push(path); return route.fulfill({ status: 401, json: { error: '请先登录' } })
   })
+  await installControlCenterFixtures(page)
   await page.goto(`${origin}/#/plugins/sing-box/users`)
   await page.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
   assert.deepEqual(privateRequests, [])

@@ -349,6 +349,9 @@ impl ServiceManager for SystemServiceManager {
     fn supports_confirmed_cancellation(&self) -> bool {
         super::cleanup::supported(self.backend)
     }
+    fn supports_diagnostic_cpu_ceiling(&self) -> bool {
+        self.backend == ServiceBackend::Systemd && super::diagnostic_cpu_ceiling_supported()
+    }
     #[cfg(unix)]
     fn diagnostic_cleanup_confirmed<'a>(
         &'a self,
@@ -504,7 +507,27 @@ pub(super) fn parse_runtime_active(output: &CommandOutput) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::ServiceBackend;
+    use super::{ServiceBackend, ServiceManager, SystemServiceManager};
+
+    #[test]
+    fn diagnostic_cpu_ceiling_is_denied_without_explicit_backend_support() {
+        assert!(!crate::fake::FakeServiceManager::default().supports_diagnostic_cpu_ceiling());
+    }
+
+    #[test]
+    fn non_systemd_backends_never_advertise_diagnostic_cpu_ceiling() {
+        for backend in [
+            ServiceBackend::OpenRc,
+            ServiceBackend::Launchd,
+            ServiceBackend::FreeBsd,
+            ServiceBackend::WindowsTask,
+            ServiceBackend::Unmanaged,
+        ] {
+            let services =
+                SystemServiceManager::new(std::sync::Arc::new(crate::system::SystemOps), backend);
+            assert!(!services.supports_diagnostic_cpu_ceiling(), "{backend:?}");
+        }
+    }
 
     #[test]
     fn detects_active_init_and_prefers_systemd_over_openrc() {

@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // Real dist, normalized panel API fixtures, private loopback only; never a provider request.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -77,6 +78,7 @@ try {
         try { observed = await response.json() } catch { return false }
         return isDeepStrictEqual(observed, fixture)
       })
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/servers/1/ip-info`); await page.reload()
       await answer
       assert.deepEqual(observed, fixture)

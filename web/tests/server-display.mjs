@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -67,6 +68,7 @@ try {
       if (path.endsWith('/probe-results')) { const selected = definitions.find(probe => probe.id === url.searchParams.get('probe_id')) ?? definitions[0]; await route.fulfill({ json: probeResults(selected) }); return }
       throw Error(`Unexpected API ${path}`)
     })
+    await installControlCenterFixtures(page)
     await page.goto(origin)
     await page.getByRole('region', { name: '服务器总览', exact: true }).waitFor()
     await page.locator('.d-card').first().waitFor()
@@ -177,12 +179,14 @@ try {
     assert.match(await page.getByRole('alert').innerText(), /历史采样刷新失败/)
     historyFailure = false
     missing = true
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview/999`)
     await page.getByRole('alert').waitFor()
     assert.equal(await page.locator('.d-detail-hero').count(), 0)
     missing = false
     const savedEntries = entries
     entries = []
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/overview`)
     await page.getByText('尚未添加节点', { exact: true }).waitFor()
     entries = savedEntries

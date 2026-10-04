@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { mkdir, readFile } from 'node:fs/promises'
@@ -66,6 +67,7 @@ try {
       pending.push(task); return task
     })
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/servers/1`)
       const panel = page.locator('section.panel').filter({ has: page.getByRole('heading', { name: '持续网络拨测', exact: true }) }), form = panel.locator('form')
       const row = () => panel.getByRole('row').filter({ has: page.getByRole('button', { name: configured?.name ?? 'TEST_ONLY 当前拨测', exact: true }) })

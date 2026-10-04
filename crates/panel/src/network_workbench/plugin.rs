@@ -101,6 +101,8 @@ impl DiagnosticPlugin for NetworkWorkbenchPlugin {
                 .cloned()
                 .ok_or_else(|| ApiError::BadRequest("此服务器不属于固定执行来源集合".into()))?;
             execution.check.validate(&execution.budget)?;
+            super::authorization::current(connection, &snapshot, request.step_index, &execution)
+                .await?;
             if let Some(target) = &execution.target
                 && target
                     .authorized_until

@@ -183,6 +183,35 @@ mod tests {
             environment(&command, "PGPASSWORD"),
             Some(OsStr::new("FINAL +&="))
         );
+        assert!(
+            !command
+                .as_std()
+                .get_args()
+                .any(|value| value.to_string_lossy().contains("FINAL"))
+        );
+    }
+
+    #[test]
+    fn effective_resolved_password_is_used_without_source_uri_userinfo() {
+        let options = PgConnectOptions::from_str("postgres://u@db.example/panel")
+            .unwrap()
+            .password("TEST_ONLY resolved pgpass or environment value");
+        let mut command = Command::new("/usr/local/bin/pg_dump");
+        configure(&mut command, &options).unwrap();
+        assert_eq!(
+            environment(&command, "PGPASSWORD"),
+            Some(OsStr::new("TEST_ONLY resolved pgpass or environment value"))
+        );
+        assert_eq!(
+            environment(&command, "PGPASSFILE"),
+            Some(OsStr::new("/dev/null"))
+        );
+        assert!(
+            !command
+                .as_std()
+                .get_args()
+                .any(|value| value.to_string_lossy().contains("TEST_ONLY"))
+        );
     }
 
     #[test]

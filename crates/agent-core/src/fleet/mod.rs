@@ -126,6 +126,12 @@ pub(crate) async fn run(
         descriptors: Arc::new(descriptors),
     };
     loop {
+        // Local expiry and policy revocation do not depend on successful panel delivery.
+        match local_policy(&config) {
+            Ok(policy) => terminals.enforce_local(&policy).await,
+            Err(_) => terminals.close_all().await,
+        }
+        terminals.disconnect().await;
         let active = client.borrow_and_update().clone();
         let retired = retirement.requested();
         if retired {
@@ -144,6 +150,9 @@ pub(crate) async fn run(
             .await
             {
                 tracing::warn!(%error,"fleet management polling failed");
+                terminals.disconnect().await;
+            } else {
+                terminals.connected();
             }
         } else {
             terminals.disconnect().await;
@@ -178,9 +187,11 @@ async fn tick(
         .get_json::<Vec<JobResult>>("fleet_results")?
         .unwrap_or_default();
     for result in &pending {
-        client
-            .post_json::<serde_json::Value>("/api/agent/v1/fleet/results", result)
-            .await?;
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            client.post_json::<serde_json::Value>("/api/agent/v1/fleet/results", result),
+        )
+        .await??;
         let mut durable = state
             .lock()
             .map_err(|_| anyhow::anyhow!("state lock poisoned"))?;
@@ -190,7 +201,11 @@ async fn tick(
         records.retain(|record| record.id != result.id);
         durable.set_json("fleet_results", &records)?;
     }
-    let work: Work = client.get_json("/api/agent/v1/fleet/work").await?;
+    let work: Work = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.get_json("/api/agent/v1/fleet/work"),
+    )
+    .await??;
     let policy = local_policy(config)?;
     terminals
         .tick(&work.terminals, &policy, ops.as_ref(), state, client)

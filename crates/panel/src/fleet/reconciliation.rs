@@ -88,7 +88,7 @@ async fn source(state: &AppState, id: Uuid) -> ApiResult<(i64, Operation)> {
         serde_json::from_value(row.get("operation")).map_err(anyhow::Error::from)?,
     ))
 }
-async fn authorize(
+pub(crate) async fn authorize(
     state: &AppState,
     headers: &HeaderMap,
     server: i64,
@@ -118,13 +118,82 @@ async fn authorize(
     control_center::require_recent_proof(state, headers).await?;
     Ok(actor)
 }
+
+pub(crate) fn permissions(server: i64, operation: &Operation) -> Vec<(Option<i64>, String)> {
+    [
+        "operations:write",
+        super::operations::permission(operation),
+        super::operations::permission(&observation(operation)),
+    ]
+    .into_iter()
+    .map(|capability| (Some(server), capability.to_owned()))
+    .collect()
+}
+
+fn auth_lock<T>(result: Result<T, sqlx::Error>) -> ApiResult<T> {
+    result.map_err(|error| {
+        if error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref()
+            == Some("55P03")
+        {
+            ApiError::Conflict("管理员会话、授权或再次验证正在变更，请刷新后重新核对".into())
+        } else {
+            error.into()
+        }
+    })
+}
+
+pub(crate) async fn lock_authorization(
+    tx: &mut Transaction<'_, Postgres>,
+    headers: &HeaderMap,
+    actor: i64,
+    requirements: &[(Option<i64>, String)],
+) -> ApiResult<()> {
+    let hash = crate::auth::security::session_hash(headers)?;
+    // Pin authorization before job/server locks. NOWAIT avoids a lock cycle
+    // with administrator changes or reauthentication taking the reverse order.
+    let profile = auth_lock(sqlx::query("SELECT role,all_servers,capabilities FROM administrator_profiles WHERE admin_id=$1 AND enabled FOR SHARE NOWAIT")
+        .bind(actor).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    let now = now_timestamp();
+    auth_lock(sqlx::query("SELECT token_hash FROM sessions WHERE token_hash=$1 AND admin_id=$2 AND expires_at>$3 FOR SHARE NOWAIT")
+        .bind(&hash).bind(actor).bind(now).fetch_optional(&mut **tx).await)?.ok_or(ApiError::Unauthorized)?;
+    auth_lock(sqlx::query("SELECT session_hash FROM administrator_reauth WHERE session_hash=$1 AND expires_at>$2 FOR SHARE NOWAIT")
+        .bind(hash).bind(now).fetch_optional(&mut **tx).await)?.ok_or_else(||ApiError::Forbidden("人工核对需要当前管理员会话的有效再次验证".into()))?;
+    let role: String = profile.get("role");
+    let all_servers: bool = profile.get("all_servers");
+    let capabilities: Value = profile.get("capabilities");
+    let grants: Vec<i64> =
+        sqlx::query_scalar("SELECT server_id FROM administrator_server_grants WHERE admin_id=$1")
+            .bind(actor)
+            .fetch_all(&mut **tx)
+            .await?;
+    for (server, capability) in requirements {
+        if (role != "owner"
+            && !capabilities.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item.as_str() == Some(capability.as_str()))
+            }))
+            || (role == "viewer" && capability.ends_with(":write"))
+            || (!all_servers && server.is_none_or(|server| !grants.contains(&server)))
+        {
+            return Err(ApiError::Forbidden(
+                "管理员已失去此冻结方案或服务器的核对权限".into(),
+            ));
+        }
+    }
+    Ok(())
+}
 async fn unresolved(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
     server: i64,
+    expected_job: Option<Uuid>,
 ) -> ApiResult<sqlx::postgres::PgRow> {
     let row=sqlx::query("SELECT operation,status,expires_at,automation_job_id,reconciliation_of,reconciled_at,dispatched_at FROM fleet_operations WHERE id=$1 AND server_id=$2 FOR UPDATE").bind(id).bind(server).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
-    if row.get::<Option<Uuid>, _>("automation_job_id").is_some() {
+    if row.get::<Option<Uuid>, _>("automation_job_id") != expected_job {
         return Err(ApiError::Conflict(
             "此操作属于自动化作业，请在作业证据核对流程处理".into(),
         ));
@@ -155,19 +224,36 @@ pub async fn inspect(
     let (server, original) = source(&state, id).await?;
     let actor = authorize(&state, &headers, server, &original).await?;
     let mut tx = state.pool.begin().await?;
+    let permissions = permissions(server, &original);
+    lock_authorization(&mut tx, &headers, actor, &permissions).await?;
     super::ensure_terminal_input_tx(&mut tx, server).await?;
-    unresolved(&mut tx, id, server).await?;
-    let pending:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_operations WHERE reconciliation_of=$1 AND status IN ('queued','dispatched') AND expires_at>$2)").bind(id).bind(now_timestamp()).fetch_one(&mut *tx).await?;
+    lock_authorization(&mut tx, &headers, actor, &permissions).await?;
+    let response = enqueue_inspection(&mut tx, id, server, actor, None).await?;
+    tx.commit().await?;
+    Ok(Json(response))
+}
+
+pub(crate) async fn enqueue_inspection(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    server: i64,
+    actor: i64,
+    expected_job: Option<Uuid>,
+) -> ApiResult<Value> {
+    let original = unresolved(tx, id, server, expected_job).await?;
+    let original: Operation =
+        serde_json::from_value(original.get("operation")).map_err(anyhow::Error::from)?;
+    let pending:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fleet_operations WHERE reconciliation_of=$1 AND status IN ('queued','dispatched') AND expires_at>$2)").bind(id).bind(now_timestamp()).fetch_one(&mut **tx).await?;
     if pending {
         return Err(ApiError::Conflict(
             "已有新的只读检查在排队或执行，请等待该检查回执".into(),
         ));
     }
     let operation = observation(&original);
-    let policy = super::policy(&mut tx, server).await?;
+    let policy = super::policy(tx, server).await?;
     let capabilities: Value = sqlx::query_scalar("SELECT capabilities FROM servers WHERE id=$1")
         .bind(server)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
     let required = match &operation {
         Operation::FileInspect { .. } => "fleet:files:transfer:v1",
@@ -182,28 +268,25 @@ pub async fn inspect(
     }
     let inspection = Uuid::new_v4();
     let now = now_timestamp();
-    sqlx::query("INSERT INTO fleet_operations(id,server_id,operation,policy,requested_by,requested_at,expires_at,status,reconciliation_of) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8)").bind(inspection).bind(server).bind(json!(operation)).bind(json!(policy)).bind(actor).bind(now).bind(now+300).bind(id).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO fleet_operations(id,server_id,operation,policy,requested_by,requested_at,expires_at,status,reconciliation_of) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8)").bind(inspection).bind(server).bind(json!(operation)).bind(json!(policy)).bind(actor).bind(now).bind(now+300).bind(id).execute(&mut **tx).await?;
     super::record(
-        &mut tx,
+        tx,
         server,
         "operation_inspection_queued",
         json!({"operation_id":id,"inspection_id":inspection,"actor":actor,"read_only":true}),
     )
     .await?;
-    tx.commit().await?;
-    Ok(Json(
-        json!({"id":inspection,"status":"queued","reconciliation_of":id,"read_only":true}),
-    ))
+    Ok(json!({"id":inspection,"status":"queued","reconciliation_of":id,"read_only":true}))
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Conclusion {
-    inspection_id: Uuid,
-    outcome: String,
-    conclusion: String,
-    processes_stopped: bool,
-    cleanup_confirmed: bool,
+    pub(crate) inspection_id: Uuid,
+    pub(crate) outcome: String,
+    pub(crate) conclusion: String,
+    pub(crate) processes_stopped: bool,
+    pub(crate) cleanup_confirmed: bool,
 }
 pub async fn complete(
     State(state): State<AppState>,
@@ -213,6 +296,26 @@ pub async fn complete(
 ) -> ApiResult<Json<Value>> {
     let (server, original) = source(&state, id).await?;
     let actor = authorize(&state, &headers, server, &original).await?;
+    let mut tx = state.pool.begin().await?;
+    let permissions = permissions(server, &original);
+    lock_authorization(&mut tx, &headers, actor, &permissions).await?;
+    super::ensure_terminal_input_tx(&mut tx, server).await?;
+    lock_authorization(&mut tx, &headers, actor, &permissions).await?;
+    let record = reconcile_in(&mut tx, id, server, actor, &input, None).await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"id":id,"status":"reconciled","reconciliation":record,"original_receipt_preserved":true,"replayed":false}),
+    ))
+}
+
+pub(crate) async fn reconcile_in(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    server: i64,
+    actor: i64,
+    input: &Conclusion,
+    expected_job: Option<Uuid>,
+) -> ApiResult<Value> {
     let conclusion = input.conclusion.trim();
     if !["failed", "unknown"].contains(&input.outcome.as_str())
         || !(32..=4096).contains(&conclusion.len())
@@ -222,10 +325,8 @@ pub async fn complete(
     {
         return Err(ApiError::BadRequest("请写明失败或未知的人工结论、实际核对步骤与依据，并明确确认已停止相关进程和清理临时资源".into()));
     }
-    let mut tx = state.pool.begin().await?;
-    super::ensure_terminal_input_tx(&mut tx, server).await?;
-    let original = unresolved(&mut tx, id, server).await?;
-    let check=sqlx::query("SELECT operation,status,result,result_digest,requested_at,dispatched_at FROM fleet_operations WHERE id=$1 AND server_id=$2 AND reconciliation_of=$3 FOR UPDATE").bind(input.inspection_id).bind(server).bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let original = unresolved(tx, id, server, expected_job).await?;
+    let check=sqlx::query("SELECT operation,status,result,result_digest,requested_at,dispatched_at FROM fleet_operations WHERE id=$1 AND server_id=$2 AND reconciliation_of=$3 FOR UPDATE").bind(input.inspection_id).bind(server).bind(id).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
     let check_operation: Operation =
         serde_json::from_value(check.get("operation")).map_err(anyhow::Error::from)?;
     let result: Value = check
@@ -252,21 +353,18 @@ pub async fn complete(
         .bind(id)
         .bind(now)
         .bind(&record)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-    sqlx::query("UPDATE fleet_operations SET reconciled_at=$2,reconciliation=$3 WHERE reconciliation_of=$1 AND status='dispatched' AND expires_at<=$2 AND reconciled_at IS NULL").bind(id).bind(now).bind(json!({"superseded_by":input.inspection_id,"original_receipt_preserved":true,"read_only":true,"actor":actor})).execute(&mut *tx).await?;
-    sqlx::query("UPDATE fleet_operations SET status='cancelled' WHERE reconciliation_of=$1 AND status='queued'").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE fleet_operations SET reconciled_at=$2,reconciliation=$3 WHERE reconciliation_of=$1 AND status='dispatched' AND expires_at<=$2 AND reconciled_at IS NULL").bind(id).bind(now).bind(json!({"superseded_by":input.inspection_id,"original_receipt_preserved":true,"read_only":true,"actor":actor})).execute(&mut **tx).await?;
+    sqlx::query("UPDATE fleet_operations SET status='cancelled' WHERE reconciliation_of=$1 AND status='queued'").bind(id).execute(&mut **tx).await?;
     super::record(
-        &mut tx,
+        tx,
         server,
         "operation_manually_reconciled",
         json!({"operation_id":id,"reconciliation":record}),
     )
     .await?;
-    tx.commit().await?;
-    Ok(Json(
-        json!({"id":id,"status":"reconciled","reconciliation":record,"original_receipt_preserved":true,"replayed":false}),
-    ))
+    Ok(record)
 }
 
 #[cfg(test)]

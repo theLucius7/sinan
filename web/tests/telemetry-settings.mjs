@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -50,6 +51,7 @@ try {
       if (['probes','probe-results','commands'].some(name => path === `/api/servers/1/${name}`)) return reply([])
       errors.push(`${method} ${path}`); return reply({error:'Unexpected fixture API'},404)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/system/settings`)
     const policy = page.locator('section.panel').filter({has:page.getByRole('heading',{name:'监控历史保存',exact:true})})
     const days=policy.getByLabel('监控历史保留天数',{exact:false})
@@ -72,6 +74,7 @@ try {
     await save.click()
     await policy.getByRole('status').waitFor()
     assert.equal(retention,90)
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1`)
     const settings=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'数据上报与保存',exact:true})})
     const interval=settings.getByLabel('历史批量写入间隔（秒）',{exact:false})

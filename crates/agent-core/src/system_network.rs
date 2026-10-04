@@ -2,7 +2,10 @@ use anyhow::{Context, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sinan_adapter_sdk::Privileged;
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 #[path = "system_network/certificates.rs"]
 mod certificates;
@@ -60,11 +63,13 @@ pub async fn execute(
         return tunnel::execute(privileged, state_dir, operation).await;
     }
     if action.starts_with("firewall_") {
+        let _lock = recovery_lock(privileged, state_dir).await?;
         return firewall::execute(privileged, state_dir, operation).await;
     }
     if action == "inventory" {
         return inventory(privileged).await;
     }
+    let _lock = recovery_lock(privileged, state_dir).await?;
     let id = operation["snapshot_id"]
         .as_str()
         .context("snapshot identifier missing")?;
@@ -73,6 +78,7 @@ pub async fn execute(
     let snapshot_path = directory.join("snapshot.json");
     match action {
         "temporary" => {
+            require_available_recovery(state_dir, "sysctl").await?;
             ensure!(
                 !snapshot_path.try_exists()?,
                 "snapshot already exists; inspect its result"
@@ -116,14 +122,7 @@ pub async fn execute(
                 persistent_after: None,
             };
             let script_path = directory.join("restore.sh");
-            let mut script = String::from("#!/bin/sh\nset -eu\n");
-            for (key, value) in &snapshot.before {
-                validate(key, value)?;
-                script.push_str(&format!("/sbin/sysctl -w '{}={}' >/dev/null\n", key, value));
-            }
-            script.push_str("printf '%s\\n' restored > \"");
-            script.push_str(&directory.join("restored").to_string_lossy());
-            script.push_str("\"\n");
+            let script = recovery_script(state_dir, "sysctl", id, &snapshot_path)?;
             ensure!(
                 !script_path
                     .to_string_lossy()
@@ -136,22 +135,29 @@ pub async fn execute(
             privileged
                 .write_file(&script_path, script.as_bytes(), 0o700, None)
                 .await?;
+            record_recovery(privileged, state_dir, "sysctl", id, "armed").await?;
             // A local service manager owns the recovery timer, independent of panel connectivity.
             // Refuse the change if arming that timer fails.
-            command(
+            let armed = command(
                 privileged,
                 "/usr/bin/systemd-run",
                 &[
                     format!("--unit=sinan-network-recovery-{id}"),
                     format!("--on-active={seconds}s"),
                     "--property=Type=oneshot".into(),
+                    "--property=MemoryMax=64M".into(),
+                    "--property=TasksMax=16".into(),
+                    "--property=RuntimeMaxSec=90s".into(),
                     "--collect".into(),
                     "/bin/sh".into(),
                     script_path.to_string_lossy().into_owned(),
                 ],
             )
-            .await
-            .context("could not arm local recovery")?;
+            .await;
+            if let Err(error) = armed {
+                record_recovery(privileged, state_dir, "sysctl", id, "refused").await?;
+                return Err(error.context("could not arm local recovery; runtime was not modified"));
+            }
             for (key, value) in &snapshot.desired {
                 if let Err(error) = write(privileged, key, value).await {
                     return Err(
@@ -169,6 +175,7 @@ pub async fn execute(
             ensure!(bytes.len() <= 32768, "snapshot exceeds limit");
             let mut snapshot: Snapshot = serde_json::from_slice(&bytes)?;
             ensure!(snapshot.id == id, "snapshot identity mismatch");
+            require_current_recovery(state_dir, "sysctl", id).await?;
             if action == "restore" {
                 for (key, before) in &snapshot.before {
                     let actual = read(privileged, key).await?;
@@ -216,6 +223,7 @@ pub async fn execute(
                     write(privileged, key, value).await?;
                 }
                 let observed = matching(privileged, &snapshot.before).await?;
+                record_recovery(privileged, state_dir, "sysctl", id, "restored").await?;
                 return Ok(json!({"snapshot_id":id,"status":"restored","observed":observed}));
             }
             ensure!(
@@ -285,12 +293,111 @@ pub async fn execute(
             privileged
                 .write_file(&snapshot_path, &serde_json::to_vec(&snapshot)?, 0o600, None)
                 .await?;
+            record_recovery(privileged, state_dir, "sysctl", id, "confirmed").await?;
             Ok(
                 json!({"snapshot_id":id,"status":"confirmed","observed":observed,"local_recovery":"disarmed"}),
             )
         }
         _ => bail!("unsupported network action"),
     }
+}
+
+async fn recovery_lock(
+    privileged: &dyn Privileged,
+    state_dir: &Path,
+) -> anyhow::Result<Box<dyn sinan_adapter_sdk::ManagedStateLock>> {
+    ensure!(
+        Path::new("/usr/bin/python3").is_file() && Path::new("/usr/bin/flock").is_file(),
+        "network recovery requires installed Python and flock"
+    );
+    let directory = state_dir.join("network-recovery");
+    privileged.create_dir(&directory, 0o700, None).await?;
+    let path = directory.join("lock");
+    let snapshot = privileged.snapshot_managed_file(&path, 4096).await?;
+    if snapshot["exists"] == false {
+        privileged
+            .update_managed_file(
+                &path,
+                Some(b""),
+                &snapshot,
+                &json!({"mode":0o600,"uid":0,"gid":0}),
+            )
+            .await?;
+    }
+    privileged.lock_managed_state(&path).await
+}
+fn recovery_marker(state_dir: &Path, kind: &str) -> PathBuf {
+    state_dir
+        .join("network-recovery")
+        .join(format!("current-{kind}.json"))
+}
+async fn require_available_recovery(state_dir: &Path, kind: &str) -> anyhow::Result<()> {
+    let path = recovery_marker(state_dir, kind);
+    if path.try_exists()? {
+        let record: Value = serde_json::from_slice(&tokio::fs::read(path).await?)?;
+        ensure!(
+            matches!(
+                record["state"].as_str(),
+                Some("confirmed" | "restored" | "refused")
+            ),
+            "prior network recovery is still armed; resolve its snapshot before another temporary change"
+        );
+    }
+    Ok(())
+}
+async fn require_current_recovery(state_dir: &Path, kind: &str, id: &str) -> anyhow::Result<()> {
+    let record: Value =
+        serde_json::from_slice(&tokio::fs::read(recovery_marker(state_dir, kind)).await?)?;
+    ensure!(
+        record["id"] == id && record["kind"] == kind,
+        "snapshot was superseded; refuse stale network operation"
+    );
+    Ok(())
+}
+async fn record_recovery(
+    privileged: &dyn Privileged,
+    state_dir: &Path,
+    kind: &str,
+    id: &str,
+    state: &str,
+) -> anyhow::Result<()> {
+    privileged
+        .write_file(
+            &recovery_marker(state_dir, kind),
+            &serde_json::to_vec(&json!({"id":id,"kind":kind,"state":state}))?,
+            0o600,
+            None,
+        )
+        .await
+}
+fn recovery_script(
+    state_dir: &Path,
+    kind: &str,
+    id: &str,
+    snapshot: &Path,
+) -> anyhow::Result<String> {
+    for path in [state_dir, snapshot] {
+        ensure!(
+            path.is_absolute()
+                && !path
+                    .to_string_lossy()
+                    .contains(['\n', '\r', '\'', '"', '\\', '$', '`']),
+            "unsafe network recovery directory"
+        );
+    }
+    ensure!(
+        valid_id(id) && matches!(kind, "sysctl" | "firewall"),
+        "invalid network recovery scope"
+    );
+    Ok(format!(
+        "#!/bin/sh\nset -eu\nexec /usr/bin/flock --exclusive --wait 10 '{}' /usr/bin/python3 -I -c '{}' '{}' '{}' '{}' '{}'\n",
+        state_dir.join("network-recovery/lock").display(),
+        include_str!("system_network/recovery.py").replace('\'', "'\\''"),
+        state_dir.display(),
+        kind,
+        id,
+        snapshot.display()
+    ))
 }
 
 async fn inventory(privileged: &dyn Privileged) -> anyhow::Result<Value> {
@@ -450,4 +557,83 @@ fn validate(key: &str, value: &str) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn recovery_script_uses_shared_inode_lock_and_source_bound_helper() {
+        let id = "00000000-0000-0000-0000-000000000001";
+        let script = recovery_script(
+            Path::new("/var/lib/sinan/core"),
+            "sysctl",
+            id,
+            Path::new("/var/lib/sinan/core/network-snapshots/example/snapshot.json"),
+        )
+        .unwrap();
+        assert!(script.contains("/usr/bin/flock --exclusive --wait 10"));
+        assert!(script.contains("network-recovery/lock"));
+        assert!(script.contains("/usr/bin/python3 -I -c"));
+        assert!(script.contains("refused"));
+        assert!(
+            recovery_script(
+                Path::new("/var/lib/sinan/\"unsafe"),
+                "sysctl",
+                id,
+                Path::new("/var/lib/sinan/snapshot.json")
+            )
+            .is_err()
+        );
+        assert!(
+            recovery_script(
+                Path::new("/var/lib/sinan"),
+                "foreign",
+                id,
+                Path::new("/var/lib/sinan/snapshot.json")
+            )
+            .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn current_snapshot_binding_rejects_stale_confirm_or_restore() {
+        let directory =
+            std::env::temp_dir().join(format!("sinan-network-slot-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(directory.join("network-recovery"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            recovery_marker(&directory, "sysctl"),
+            br#"{"id":"new","kind":"sysctl","state":"armed"}"#,
+        )
+        .await
+        .unwrap();
+        assert!(
+            require_available_recovery(&directory, "sysctl")
+                .await
+                .is_err()
+        );
+        assert!(
+            require_current_recovery(&directory, "sysctl", "old")
+                .await
+                .is_err()
+        );
+        assert!(
+            require_current_recovery(&directory, "sysctl", "new")
+                .await
+                .is_ok()
+        );
+        tokio::fs::write(
+            recovery_marker(&directory, "sysctl"),
+            br#"{"id":"new","kind":"sysctl","state":"confirmed"}"#,
+        )
+        .await
+        .unwrap();
+        assert!(
+            require_available_recovery(&directory, "sysctl")
+                .await
+                .is_ok()
+        );
+        tokio::fs::remove_dir_all(&directory).await.unwrap();
+    }
 }

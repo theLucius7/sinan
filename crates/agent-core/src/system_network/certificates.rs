@@ -33,10 +33,8 @@ struct Receipt {
     fingerprint: String,
 }
 struct PreviousFile {
-    bytes: Vec<u8>,
-    mode: u32,
-    owner: u32,
-    group: u32,
+    bytes: Option<Vec<u8>>,
+    snapshot: Value,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,7 +131,13 @@ pub async fn deploy_certificate(
                 .is_some_and(|extension| extension == "pem" || extension == "key"),
         "certificate target extensions are invalid"
     );
-    let receipt_path = public.with_extension("sinan-certificate.json");
+    let receipt_path = allowed(
+        local,
+        remote,
+        &public
+            .with_extension("sinan-certificate.json")
+            .to_string_lossy(),
+    )?;
     let old_public = existing(privileged, &public, 65536).await?;
     let old_private = existing(privileged, &private, 16384).await?;
     let old_receipt = existing(privileged, &receipt_path, 4096).await?;
@@ -146,11 +150,7 @@ pub async fn deploy_certificate(
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
         })
         .collect();
-    let account = properties
-        .get("User")
-        .map(String::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("root");
+    let account = service_account(&properties)?;
     ensure!(
         valid_account(account),
         "service account is not supported for certificate deployment"
@@ -176,7 +176,19 @@ pub async fn deploy_certificate(
     } else {
         0o640
     };
-    if old_public.is_some() || old_private.is_some() {
+    let group_record = bounded(
+        privileged,
+        "/usr/bin/getent",
+        &["group".into(), group.clone()],
+    )
+    .await?;
+    let group_id: u32 = group_record
+        .trim()
+        .split(':')
+        .nth(2)
+        .context("actual service group could not be resolved")?
+        .parse()?;
+    if old_public.bytes.is_some() || old_private.bytes.is_some() {
         if !material.adopt_existing {
             let previous: Receipt =
                 serde_json::from_slice(&privileged.read_managed_file(&receipt_path, 4096).await?)
@@ -188,49 +200,69 @@ pub async fn deploy_certificate(
             ensure!(
                 previous.certificate_id == material.certificate_id
                     && old_public
+                        .bytes
                         .as_ref()
-                        .is_some_and(|file| hash(&file.bytes) == previous.public_sha256)
+                        .is_some_and(|bytes| hash(bytes) == previous.public_sha256)
                     && old_private
+                        .bytes
                         .as_ref()
-                        .is_some_and(|file| hash(&file.bytes) == previous.key_sha256),
+                        .is_some_and(|bytes| hash(bytes) == previous.key_sha256),
                 "existing certificate changed outside management; refuse overwrite"
             );
         }
-        if let Some(file) = &old_public {
+        if let Some(bytes) = &old_public.bytes {
             let path = allowed(
                 local,
                 remote,
                 &public
-                    .with_extension("sinan-previous.crt")
+                    .with_extension(format!(
+                        "sinan-previous-{}.crt",
+                        uuid::Uuid::parse_str(&material.deployment_id)?
+                    ))
                     .to_string_lossy(),
             )?;
-            privileged
-                .write_file(&path, &file.bytes, 0o600, None)
-                .await?;
+            private_backup(privileged, &path, bytes).await?;
         }
-        if let Some(file) = &old_private {
+        if let Some(bytes) = &old_private.bytes {
             let path = allowed(
                 local,
                 remote,
                 &private
-                    .with_extension("sinan-previous.key")
+                    .with_extension(format!(
+                        "sinan-previous-{}.key",
+                        uuid::Uuid::parse_str(&material.deployment_id)?
+                    ))
                     .to_string_lossy(),
             )?;
-            privileged
-                .write_file(&path, &file.bytes, 0o600, None)
-                .await?;
+            private_backup(privileged, &path, bytes).await?;
         }
     }
+    let mut current_public = old_public.snapshot.clone();
+    let mut current_private = old_private.snapshot.clone();
+    let mut current_receipt = old_receipt.snapshot.clone();
+    let receipt = Receipt {
+        certificate_id: material.certificate_id.clone(),
+        version_id: material.version_id.clone(),
+        public_sha256: hash(material.public_chain.as_bytes()),
+        key_sha256: hash(material.private_key.as_bytes()),
+        fingerprint: material.fingerprint.clone(),
+    };
+    let receipt_bytes = serde_json::to_vec(&receipt)?;
     let apply = async {
-        privileged
-            .write_file(&public, material.public_chain.as_bytes(), 0o644, None)
+        current_public = privileged
+            .update_managed_file(
+                &public,
+                Some(material.public_chain.as_bytes()),
+                &old_public.snapshot,
+                &json!({"mode":0o644,"uid":0,"gid":0}),
+            )
             .await?;
-        privileged
-            .write_file(
+        current_private = privileged
+            .update_managed_file(
                 &private,
-                material.private_key.as_bytes(),
-                key_mode,
-                Some(&group),
+                Some(material.private_key.as_bytes()),
+                &old_private.snapshot,
+                &json!({"mode":key_mode,"uid":0,"gid":group_id}),
             )
             .await?;
         services
@@ -241,24 +273,49 @@ pub async fn deploy_certificate(
             services.is_active(&material.service).await?,
             "certificate service is not active after reload"
         );
-        let receipt = Receipt {
-            certificate_id: material.certificate_id.clone(),
-            version_id: material.version_id.clone(),
-            public_sha256: hash(material.public_chain.as_bytes()),
-            key_sha256: hash(material.private_key.as_bytes()),
-            fingerprint: material.fingerprint.clone(),
-        };
-        privileged
-            .write_file(&receipt_path, &serde_json::to_vec(&receipt)?, 0o600, None)
+        current_receipt = privileged
+            .update_managed_file(
+                &receipt_path,
+                Some(&receipt_bytes),
+                &old_receipt.snapshot,
+                &json!({"mode":0o600,"uid":0,"gid":0}),
+            )
             .await?;
         Ok::<(), anyhow::Error>(())
     }
     .await;
     if apply.is_err() {
         let recovery = async {
-            restore(privileged, &public, old_public.as_ref()).await?;
-            restore(privileged, &private, old_private.as_ref()).await?;
-            restore(privileged, &receipt_path, old_receipt.as_ref()).await?;
+            current_public = reconcile(
+                privileged,
+                &public,
+                &old_public,
+                &current_public,
+                material.public_chain.as_bytes(),
+                &json!({"mode":0o644,"uid":0,"gid":0}),
+            )
+            .await?;
+            current_private = reconcile(
+                privileged,
+                &private,
+                &old_private,
+                &current_private,
+                material.private_key.as_bytes(),
+                &json!({"mode":key_mode,"uid":0,"gid":group_id}),
+            )
+            .await?;
+            current_receipt = reconcile(
+                privileged,
+                &receipt_path,
+                &old_receipt,
+                &current_receipt,
+                &receipt_bytes,
+                &json!({"mode":0o600,"uid":0,"gid":0}),
+            )
+            .await?;
+            restore(privileged, &public, &old_public, &current_public).await?;
+            restore(privileged, &private, &old_private, &current_private).await?;
+            restore(privileged, &receipt_path, &old_receipt, &current_receipt).await?;
             services.reload(&material.service).await?;
             Ok::<(), anyhow::Error>(())
         }
@@ -273,6 +330,47 @@ pub async fn deploy_certificate(
     Ok(
         json!({"deployment_id":material.deployment_id,"certificate_id":material.certificate_id,"version_id":material.version_id,"fingerprint":material.fingerprint,"deployed":true,"service_reloaded":true,"service":material.service,"handshake_verified":false,"completed_at":sinan_protocol::now_timestamp(),"private_key":"protected_local_file","key_mode":format!("{key_mode:o}"),"previous_files":"protected_local_recovery"}),
     )
+}
+async fn reconcile(
+    privileged: &dyn Privileged,
+    path: &Path,
+    previous: &PreviousFile,
+    reported: &Value,
+    desired: &[u8],
+    metadata: &Value,
+) -> anyhow::Result<Value> {
+    let actual = existing(privileged, path, 65536).await?;
+    recovery_snapshot(
+        &previous.snapshot,
+        reported,
+        actual.snapshot,
+        desired,
+        metadata,
+    )
+}
+fn recovery_snapshot(
+    previous: &Value,
+    reported: &Value,
+    actual: Value,
+    desired: &[u8],
+    metadata: &Value,
+) -> anyhow::Result<Value> {
+    ensure!(
+        actual["parents"] == previous["parents"],
+        "certificate parent changed; local recovery is unconfirmed"
+    );
+    if actual == *previous || actual == *reported {
+        return Ok(actual);
+    }
+    let file = &actual["file"];
+    ensure!(
+        file["sha256"] == hash(desired)
+            && ["mode", "uid", "gid"]
+                .iter()
+                .all(|field| file[*field] == metadata[*field]),
+        "certificate helper outcome or external changes are unknown; refuse recovery overwrite"
+    );
+    Ok(actual)
 }
 
 fn allowed(local: &AccessPolicy, remote: &AccessPolicy, value: &str) -> anyhow::Result<PathBuf> {
@@ -345,55 +443,75 @@ async fn existing(
     privileged: &dyn Privileged,
     path: &Path,
     maximum: usize,
-) -> anyhow::Result<Option<PreviousFile>> {
-    let metadata = match std::fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    ensure!(
-        metadata.is_file() && !metadata.file_type().is_symlink(),
-        "certificate recovery target is not ordinary"
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Ok(Some(PreviousFile {
-            bytes: privileged.read_managed_file(path, maximum).await?,
-            mode: metadata.mode() & 0o777,
-            owner: metadata.uid(),
-            group: metadata.gid(),
-        }))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (privileged, maximum);
-        anyhow::bail!("certificate deployment requires Unix ownership inspection")
-    }
+) -> anyhow::Result<PreviousFile> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let mut snapshot = privileged.snapshot_managed_file(path, maximum).await?;
+    let bytes = snapshot
+        .get("content")
+        .and_then(Value::as_str)
+        .map(|content| STANDARD.decode(content))
+        .transpose()?;
+    snapshot
+        .as_object_mut()
+        .context("invalid file snapshot")?
+        .remove("content");
+    Ok(PreviousFile { bytes, snapshot })
 }
 async fn restore(
     privileged: &dyn Privileged,
     path: &Path,
-    previous: Option<&PreviousFile>,
+    previous: &PreviousFile,
+    current: &Value,
 ) -> anyhow::Result<()> {
-    if let Some(file) = previous {
-        privileged
-            .write_file(path, &file.bytes, file.mode, None)
-            .await?;
-        bounded(
-            privileged,
-            "/usr/bin/chown",
-            &[
-                format!("{}:{}", file.owner, file.group),
-                "--".into(),
-                path.to_string_lossy().into_owned(),
-            ],
+    if current == &previous.snapshot {
+        return Ok(());
+    }
+    let metadata = previous
+        .snapshot
+        .get("file")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .unwrap_or_else(|| json!({"mode":0o600,"uid":0,"gid":0}));
+    privileged
+        .update_managed_file(path, previous.bytes.as_deref(), current, &metadata)
+        .await?;
+    Ok(())
+}
+async fn private_backup(
+    privileged: &dyn Privileged,
+    path: &Path,
+    bytes: &[u8],
+) -> anyhow::Result<()> {
+    let previous = privileged.snapshot_managed_file(path, 65536).await?;
+    ensure!(
+        previous["exists"] == false,
+        "certificate recovery backup already exists; refuse replacement"
+    );
+    privileged
+        .update_managed_file(
+            path,
+            Some(bytes),
+            &previous,
+            &json!({"mode":0o600,"uid":0,"gid":0}),
         )
         .await?;
-        Ok(())
+    Ok(())
+}
+fn service_account(
+    properties: &std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<&str> {
+    ensure!(
+        properties.get("LoadState").map(String::as_str) == Some("loaded"),
+        "actual loaded service metadata is required for certificate deployment"
+    );
+    let account = properties
+        .get("User")
+        .context("actual service account is unknown; refuse certificate deployment")?;
+    Ok(if account.is_empty() {
+        "root"
     } else {
-        privileged.remove_file(path).await
-    }
+        account.as_str()
+    })
 }
 async fn bounded(
     privileged: &dyn Privileged,
@@ -424,6 +542,54 @@ fn hash(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unknown_helper_reply_recovers_only_exact_desired_identity_under_original_parents() {
+        let previous = json!({"parents":[{"dev":1,"ino":2}],"exists":true,"file":{"sha256":hash(b"TEST_ONLY old"),"mode":0o600,"uid":0,"gid":0}});
+        let metadata = json!({"mode":0o640,"uid":0,"gid":123});
+        let mut actual = json!({"parents":[{"dev":1,"ino":2}],"exists":true,"file":{"sha256":hash(b"TEST_ONLY new"),"mode":0o640,"uid":0,"gid":123}});
+        assert_eq!(
+            recovery_snapshot(
+                &previous,
+                &previous,
+                actual.clone(),
+                b"TEST_ONLY new",
+                &metadata
+            )
+            .unwrap(),
+            actual
+        );
+        actual["file"]["sha256"] = json!(hash(b"TEST_ONLY external"));
+        assert!(
+            recovery_snapshot(
+                &previous,
+                &previous,
+                actual.clone(),
+                b"TEST_ONLY new",
+                &metadata
+            )
+            .is_err()
+        );
+        actual["file"]["sha256"] = json!(hash(b"TEST_ONLY new"));
+        actual["parents"][0]["ino"] = json!(3);
+        assert!(
+            recovery_snapshot(&previous, &previous, actual, b"TEST_ONLY new", &metadata).is_err()
+        );
+    }
+    #[test]
+    fn actual_loaded_account_is_required_instead_of_inferred_root() {
+        let unknown = [("active".into(), "true".into())].into_iter().collect();
+        assert!(service_account(&unknown).is_err());
+        let mut loaded = [("LoadState".into(), "loaded".into())]
+            .into_iter()
+            .collect();
+        assert!(service_account(&loaded).is_err());
+        loaded.insert("User".into(), "operator".into());
+        assert_eq!(service_account(&loaded).unwrap(), "operator");
+        loaded.insert("User".into(), String::new());
+        assert_eq!(service_account(&loaded).unwrap(), "root");
+        loaded.insert("LoadState".into(), "not-found".into());
+        assert!(service_account(&loaded).is_err());
+    }
     #[test]
     fn certificate_targets_require_both_scopes() {
         let policy = AccessPolicy {

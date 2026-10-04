@@ -2079,3 +2079,13 @@ r2–r7精确历史回收、r4–r8 daily及全部full门禁保持。只移除�
 - 源码、工具供应、实机签收与正式部署分别记录，真实DNS、云操作、通知及生产服务部署没有执行，NodeQuality完整执行门禁保持，CI继续暂停。详见[模块入口](docs/operations-expansion.md)、[21类覆盖](docs/acceptance/operations-platform-coverage.md)及[实际验收记录](docs/acceptance/operations-platform-expansion.md)。
 
 - 精确清理本轮数据库、容器/卷/镜像、随机密钥与备份、80个临时UUID目录、target、前端依赖副本和验证缓存；当前源码、测试、最新35文件dist及有界证据保留，未触碰原有工具链、有效凭据或其他项目缓存。
+
+
+## 2026-10-04：PR160 本聊天复审补修与集中本地验收
+
+- 独立集成树保留作者 `9e2ad608` 与 main `afe2f457`；集中补齐会话隔离、失联回收、临时网络与私有证书身份、DNS 持久单次意图、未知运维只读核对、恢复独立口令、工作台许可/期限/资源及界面陈旧回调保护。旧48迁移与作者9新增原字节保持，只追加0058；作者 Cargo.lock 保留，不称同旧main。
+- 完整实现、协议、界面、回归源码和文档先冻结，再统一验收。Rust 默认111目标有效1255/0/24；物理212目标尝试，最后65实际变化产物完整补验、46逐字相同产物保留。10个原实际零示例doc组只保库存，无最新后端修改新doc编译信用。fmt/全workspace全targets Clippy通过；35资产 compiled handler 的2完整方法及72 GET/HEAD不重复计数。
+- fresh Bun176/2316expect/32文件、一次TS/Vite及35dist逐字。49不同隔离Chromium有效292页/16853请求/718写，78物理尝试和29原失败保留，零外部/页面错误。真实PG/面板虚拟Passkey另1完整方法、4页150请求73写通过；原缺浏览器与旧按钮失败保留，默认24忽略不减。
+- Python79有效scope/84实际派发、988完整方法通过/140方法skip/1部分父项，四setupClass下35方法未启动；2357为已记录callback credit。184 AST/56 Node/159 core/13GNU shell保留相称消费证据，最后3完整Markdown整项补验单列。不将纯夹具或条件跳过当原生执行。
+- 已停自有PG并确认55432无监听，精确删除本轮runtime/target/node_modules/截图；逻辑10837182380B、观测可用量增8880222208B分别记录。最新必要摘要与源码身份保存后，最终交付前清理完整raw/重复冻结；旧路径只为历史身份。共享工具、其他任务、源码/测试/35dist、凭据和生产保留，无global prune。
+- 详见[完整复审记录](docs/acceptance/pr160-review.md)及[本聊天机器摘要](docs/acceptance/evidence/pr160-review-final.json)。原失败及整目标替换保留，不累加作者旧Linux/备份恢复数字。四源码CI仍暂停、dynamic Copilot独立；未正式签署发布部署、真实DNS/云/费用/通知或issue写入。既定实机顺序与完整NodeQuality/双架构/Windows门禁仍待。

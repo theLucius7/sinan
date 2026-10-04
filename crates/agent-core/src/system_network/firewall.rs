@@ -63,6 +63,7 @@ pub(super) async fn execute(
     let timer = format!("sinan-firewall-recovery-{snapshot_id}");
     match operation["action"].as_str() {
         Some("firewall_temporary") => {
+            super::require_available_recovery(state_dir, "firewall").await?;
             ensure!(
                 !snapshot_path.try_exists()?,
                 "snapshot exists; inspect prior result before retry"
@@ -125,14 +126,8 @@ pub(super) async fn execute(
                 !path.contains(['\n', '\r', '\"', '\\', '$', '`']),
                 "unsafe firewall recovery path"
             );
-            let script = format!(
-                "#!/bin/sh\nset -eu\n/usr/sbin/nft delete table inet {table}\n{}",
-                if previous.is_some() {
-                    format!("/usr/sbin/nft -f \"{path}\"\n")
-                } else {
-                    String::new()
-                }
-            );
+            let script =
+                super::recovery_script(state_dir, "firewall", snapshot_id, &snapshot_path)?;
             privileged
                 .write_file(&restore, script.as_bytes(), 0o700, None)
                 .await?;
@@ -149,18 +144,30 @@ pub(super) async fn execute(
             privileged
                 .write_file(&snapshot_path, &serde_json::to_vec(&snapshot)?, 0o600, None)
                 .await?;
-            command(
+            super::record_recovery(privileged, state_dir, "firewall", snapshot_id, "armed").await?;
+            let armed = command(
                 privileged,
                 "/usr/bin/systemd-run",
                 &[
                     format!("--unit={timer}"),
                     format!("--on-active={seconds}s"),
+                    "--property=Type=oneshot".into(),
+                    "--property=MemoryMax=64M".into(),
+                    "--property=TasksMax=16".into(),
+                    "--property=RuntimeMaxSec=90s".into(),
                     "--collect".into(),
                     "/bin/sh".into(),
                     restore.to_string_lossy().into_owned(),
                 ],
             )
-            .await?;
+            .await;
+            if let Err(error) = armed {
+                super::record_recovery(privileged, state_dir, "firewall", snapshot_id, "refused")
+                    .await?;
+                return Err(
+                    error.context("could not arm firewall recovery; table was not modified")
+                );
+            }
             command(
                 privileged,
                 "/usr/sbin/nft",
@@ -203,6 +210,7 @@ pub(super) async fn execute(
                     json!({"table":table,"observed":actual,"snapshot_id":snapshot_id,"matches_applied":actual.as_ref().is_some_and(|value|hash(value)==snapshot.observed_hash),"sampled_at":sinan_protocol::now_timestamp()}),
                 );
             }
+            super::require_current_recovery(state_dir, "firewall", snapshot_id).await?;
             ensure!(
                 actual
                     .as_ref()
@@ -239,28 +247,25 @@ pub(super) async fn execute(
                         .is_some_and(|value| hash(value) == snapshot.observed_hash),
                     "firewall recovery already started; inspect actual table"
                 );
+                let restore_path = directory.join("restore-batch.nft");
+                privileged
+                    .write_file(
+                        &restore_path,
+                        format!(
+                            "delete table inet {table}\n{}",
+                            snapshot.previous.as_deref().unwrap_or("")
+                        )
+                        .as_bytes(),
+                        0o600,
+                        None,
+                    )
+                    .await?;
                 command(
                     privileged,
                     "/usr/sbin/nft",
-                    &[
-                        "delete".into(),
-                        "table".into(),
-                        "inet".into(),
-                        table.clone(),
-                    ],
+                    &["-f".into(), restore_path.to_string_lossy().into_owned()],
                 )
                 .await?;
-                if snapshot.previous.is_some() {
-                    command(
-                        privileged,
-                        "/usr/sbin/nft",
-                        &[
-                            "-f".into(),
-                            directory.join("restore.nft").to_string_lossy().into_owned(),
-                        ],
-                    )
-                    .await?;
-                }
                 if snapshot.persisted {
                     let unit = format!("sinan-firewall-{id}.service");
                     command(
@@ -277,6 +282,8 @@ pub(super) async fn execute(
                         .await?;
                     command(privileged, "/usr/bin/systemctl", &["daemon-reload".into()]).await?;
                 }
+                super::record_recovery(privileged, state_dir, "firewall", snapshot_id, "restored")
+                    .await?;
                 Ok(
                     json!({"status":"restored","table":table,"observed":table_text(privileged,&table).await?}),
                 )
@@ -305,6 +312,8 @@ pub(super) async fn execute(
                 snapshot.confirmed = true;
                 privileged
                     .write_file(&snapshot_path, &serde_json::to_vec(&snapshot)?, 0o600, None)
+                    .await?;
+                super::record_recovery(privileged, state_dir, "firewall", snapshot_id, "confirmed")
                     .await?;
                 Ok(json!({"status":"confirmed","local_recovery":"disarmed","table":table}))
             } else {

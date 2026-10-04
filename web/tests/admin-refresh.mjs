@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 // TEST_ONLY: exercise real admin pages against isolated, controllable API reads.
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -5,6 +6,14 @@ import { readFile } from 'node:fs/promises'
 import { extname, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { proxyResourceFixtures } from './proxy-resource-fixtures.mjs'
+
+// TEST_ONLY read-only contract for the newly mounted UserDiagnostics resource.
+// Device state and sensitive template content remain explicitly unavailable.
+const diagnosisFixture = user => ({ user_id: user.id, account: { user_id: user.id, name: user.name, portal_created: false, keys: 0, active_sessions: 0, activation_expires_at: null },
+  subscription: { status: 'empty', message: 'TEST_ONLY 真实设备状态未验证。', granted_nodes: 0, ready_managed_nodes: 0, ready_external_nodes: 0 },
+  permissions: [], external_authorizations: [], ledger: [], quota_credits: [], package_history: [], rotations: [], events: [],
+  limitations: { credentials_read: { available: false, reason: 'TEST_ONLY 敏感内容未读取；此处仅为独立只读诊断快照。' } } })
+const templateFixture = { template: null, definition_redacted: false, credential_access_reason: 'TEST_ONLY 完整模板未读取。', supported_client: 'singbox', supported_version: '1.14.2', schema_validation: true, runtime_validation: false, limitations: 'TEST_ONLY 没有保存的模板，未执行真实客户端验证。' }
 
 const { chromium } = await import(process.env.SINAN_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SINAN_PLAYWRIGHT_MODULE).href : 'playwright')
 const dist = process.env.SINAN_WEB_DIST ?? fileURLToPath(new URL('../dist/', import.meta.url))
@@ -79,10 +88,13 @@ try {
       else if (path === `${prefix}/users/1/entitlement`) value = { user_id: 1, package_group_id: null, package_name: null, monthly_bytes: null, starts_at: null, expires_at: null, cycle_start: null, next_reset: null, used_bytes: '0', status: 'unlimited', allowed: true }
       else if (path === `${prefix}/users/1/policy-groups`) value = { group_ids: [] }
       else if (path === `${prefix}/users/1/portal`) value = { configuration: { enabled: false, reason: 'TEST_ONLY 尚未启用', origin }, keys: 0, url: null, activation_expires_at: null }
+      else if (method === 'GET' && !url.search && path === `${prefix}/users/1/diagnosis`) value = diagnosisFixture(user)
+      else if (method === 'GET' && !url.search && path === `${prefix}/users/1/client-template`) value = templateFixture
       else assert.fail(`Unexpected read: ${path}`)
       await route.fulfill({ json: value }).catch(() => {})
     })
     try {
+      await installControlCenterFixtures(page)
       await page.goto(`${origin}/#/plugins/sing-box/${pageName}`)
       const edit = pageName === 'groups' ? page.getByRole('row').filter({ hasText: row.name }).getByRole('button', { name: '编辑', exact: true }) : page.locator('.user-heading').getByRole('button', { name: '编辑', exact: true })
       await wait(() => edit.isEnabled(), 'Initial snapshots must finish')

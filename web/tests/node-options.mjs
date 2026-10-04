@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile, mkdir } from 'node:fs/promises'
@@ -65,6 +66,7 @@ try {
       else {errors.push(`Unexpected ${method}: ${path}`); return route.fulfill({status:404,json:{}})}
       await route.fulfill({json:value})
     })
+    await installControlCenterFixtures(page)
     await page.goto(`http://127.0.0.1:${server.address().port}/#/plugins/sing-box/nodes`)
     const dialog=page.getByRole('dialog')
     for(let index=0;index<fixtures.length;index++) {
@@ -93,14 +95,14 @@ try {
           form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))
         })
         await wait(() => nodeReadGate.reached,'A real current node read must be held')
-        assert(await dialog.getByRole('button',{name:'保存并自动发布'}).isDisabled())
+        assert(await dialog.getByRole('button',{name:'保存目标配置',exact:true}).isDisabled())
         assert.equal(writes.length,before,'Same-event reload invalidates the captured node submit callback')
         assert(nodeReadGate.reached,'A real current node read is held')
         assert.equal(await dialog.locator('[name=transport_path]').inputValue(),'/draft')
         assert.equal(await dialog.locator('[name=service_name]').count(),0,'Only the chosen WS fields remain active')
         release(); nodeReadGate=undefined
-        await dialog.getByRole('button',{name:'保存并自动发布'}).waitFor()
-        const save = dialog.getByRole('button',{name:'保存并自动发布'})
+        await dialog.getByRole('button',{name:'保存目标配置',exact:true}).waitFor()
+        const save = dialog.getByRole('button',{name:'保存目标配置',exact:true})
         await wait(() => save.isEnabled(),'Equal current snapshots must restore the advanced draft')
         assert.equal(await dialog.locator('[name=transport_path]').inputValue(),'/draft')
         await dialog.locator('[name=transport_path]').fill('/proxy')
@@ -123,7 +125,7 @@ try {
       }
       assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true)
       await dialog.locator('[name=name]').fill(`已编辑 ${fixture.protocol}`)
-      await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+      await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
       await dialog.waitFor({state:'hidden'})
       const body=writes.at(-1).body
       if(group) assert.deepEqual(body.settings[group],fixture.settings[group])
@@ -138,7 +140,7 @@ try {
     assert.equal(await dialog.locator('[name=name]').isEnabled(),true)
     await dialog.locator('[name=name]').fill('仅修改名称')
     await dialog.locator('[name=enabled]').uncheck()
-    await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+    await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
     assert.deepEqual(writes.at(-1).body,{name:'仅修改名称',enabled:false})
     for(const transport of ['httpupgrade','grpc']) {
@@ -148,7 +150,7 @@ try {
       if(transport==='httpupgrade') await dialog.locator('[name=transport_path]').fill('/upgrade')
       else await dialog.locator('[name=service_name]').fill('node-service')
       assert.equal(await dialog.locator('[name=max_early_data]').count(),0,'Inactive WS options are excluded from the form')
-      await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+      await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
       await dialog.waitFor({state:'hidden'})
       assert.deepEqual(writes.at(-1).body.settings.transport,transport==='httpupgrade'?{type:'httpupgrade',path:'/upgrade',host:'proxy.example.com'}:{type:'grpc',service_name:'node-service'})
       assert.equal(writes.at(-1).body.settings.reality.flow,'none')
@@ -160,7 +162,7 @@ try {
     await dialog.locator('[name=tcp_keep_alive_seconds]').fill('')
     await dialog.locator('[name=tcp_keep_alive_interval_seconds]').fill('')
     await dialog.locator('[name=public_port]').fill('')
-    await dialog.getByRole('button',{name:'保存并自动发布'}).click()
+    await dialog.getByRole('button',{name:'保存目标配置',exact:true}).click()
     await dialog.waitFor({state:'hidden'})
     assert.deepEqual(writes.at(-1).body.settings.transport,{type:'tcp'})
     assert.equal(writes.at(-1).body.settings.reality.flow,'vision')

@@ -76,6 +76,18 @@ pub fn redact(value: &Value) -> Value {
     walk(value, 0)
 }
 
+fn audit_request(path: &str, value: &Value) -> Value {
+    let mut value = value.clone();
+    if path.starts_with("/api/fleet/terminals/") && path.ends_with("/input") {
+        // PTY data includes commands and interactive passwords. Keep window
+        // metadata, but never persist the terminal byte stream in audit rows.
+        if let Some(object) = value.as_object_mut() {
+            object.insert("data".into(), json!("[已脱敏]"));
+        }
+    }
+    redact(&value)
+}
+
 fn independent_identity(path: &str) -> bool {
     path.starts_with("/api/agent/")
         || path == "/api/login"
@@ -391,7 +403,7 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
             bytes.extend_from_slice(&chunk);
         }
         let requested = serde_json::from_slice::<Value>(&bytes)
-            .map(|value| redact(&value))
+            .map(|value| audit_request(&path, &value))
             .unwrap_or(json!({"bytes":bytes.len(),"body":"[非JSON正文未记录]"}));
         let before = match snapshot(&state, &path).await {
             Ok(value) => value,
@@ -458,6 +470,25 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn terminal_audit_keeps_window_metadata_without_input() {
+        let secret = "TEST_ONLY terminal password sentinel";
+        let value = audit_request(
+            "/api/fleet/terminals/00000000-0000-0000-0000-000000000001/input",
+            &json!({"data":secret,"columns":80,"rows":24}),
+        );
+        assert_eq!(value["data"], "[已脱敏]");
+        assert_eq!(value["columns"], 80);
+        assert_eq!(value["rows"], 24);
+        assert!(!value.to_string().contains(secret));
+        assert_eq!(
+            audit_request(
+                "/api/control-center/preferences/view",
+                &json!({"data":"sort"})
+            )["data"],
+            "sort"
+        );
+    }
     #[test]
     fn audit_redacts_nested_secrets_and_payloads() {
         let value = redact(

@@ -35,7 +35,17 @@ pub(super) fn desired_matches(request: &Request, observed: &Value) -> bool {
     })
 }
 
-async fn observe(
+pub(super) fn provider_receipt(entry: &super::dns_record_actions::Intent) -> Value {
+    // A read-only observation of a lost create response is not a provider write receipt.
+    // It must remain observed on every later reconciliation, even when it contains an ID.
+    if entry.status == "submitted" {
+        entry.observed.clone().unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    }
+}
+
+pub(super) async fn observe(
     client: &RecordClient,
     request: &Request,
     previous: &Value,
@@ -114,14 +124,42 @@ pub(super) async fn reconcile(
         .try_acquire_owned()
         .map_err(|_| ApiError::Busy)?;
     let mut tx = state.pool.begin().await?;
+    // An active writer holds this transaction lock across provider I/O. After its request
+    // disappears, the lock is released but the committed uncertain intent remains.
+    super::dns_record_actions::try_lock(&mut tx).await?;
     let account: Account = sqlx::query_as("SELECT * FROM dns_accounts WHERE id=$1 FOR SHARE")
         .bind(account_id)
         .fetch_one(&mut *tx)
         .await?;
     dns_accounts::authorize(&state, &headers, &account.config, "dns:read").await?;
-    let row:Option<(i64,Value,Option<Value>,Option<Value>)>=sqlx::query_as("SELECT account_revision,request,previous,observed FROM dns_record_history WHERE id=$1 AND account_id=$2 AND status IN('unknown','submitted','observed') FOR UPDATE").bind(history_id).bind(account_id).fetch_optional(&mut *tx).await?;
-    let (revision, request, previous, observed) = row.ok_or(ApiError::NotFound)?;
-    if revision != account.revision {
+    let entry: super::dns_record_actions::Intent = sqlx::query_as("SELECT * FROM dns_record_history WHERE id=$1 AND account_id=$2 AND status IN('unknown','submitted','observed') FOR UPDATE")
+        .bind(history_id).bind(account_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let actor = crate::control_center::authenticate(&state, &headers).await?;
+    if !super::dns_records::can_read_history(
+        &actor,
+        &account.config,
+        &json!({"account_snapshot":entry.account_snapshot}),
+    ) {
+        return Err(ApiError::Forbidden(
+            "当前管理员没有此 DNS 历史原授权范围的读取权限".into(),
+        ));
+    }
+    if entry.requested_by.is_some() && entry.write_started_at.is_none() {
+        super::dns_record_actions::finish(
+            &mut tx,
+            account_id,
+            history_id,
+            None,
+            "blocked",
+            Some("not_submitted"),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(Json(
+            json!({"status":"blocked","observed":null,"checked_at":sinan_protocol::now_timestamp(),"source":"local_durable_intent","dns_written":false,"ownership_confirmed":false}),
+        ));
+    }
+    if entry.account_revision != account.revision {
         return Err(ApiError::Conflict(
             "账号已变化，需按当前区域与凭据重新核对".into(),
         ));
@@ -130,18 +168,20 @@ pub(super) async fn reconcile(
     let owner = dns_accounts::zone(
         &client,
         &account,
-        request["zone_id"].as_str().unwrap_or_default(),
+        entry.request["zone_id"].as_str().unwrap_or_default(),
     )
     .await?;
-    let mut request: Request = serde_json::from_value(request).map_err(anyhow::Error::from)?;
+    let receipt = provider_receipt(&entry);
+    let mut request: Request =
+        serde_json::from_value(entry.request).map_err(anyhow::Error::from)?;
     normalize_for(&mut request, &owner, account.config.provider)?;
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(super::REQUEST_BUDGET),
         observe(
             &client,
             &request,
-            &previous.unwrap_or(Value::Null),
-            &observed.unwrap_or(Value::Null),
+            &entry.previous.unwrap_or(Value::Null),
+            &receipt,
             &owner,
         ),
     )

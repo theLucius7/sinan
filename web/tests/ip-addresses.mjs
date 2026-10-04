@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -40,6 +41,7 @@ try {
       else throw new Error(`Unexpected API: ${request.method()} ${path}`)
       await route.fulfill({ json: data })
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/servers/1/ip-info`)
     const refresh = page.getByRole('button', { name: '刷新 IP 质量', exact: true })
     const group = page.locator('details.quality-private-addresses')

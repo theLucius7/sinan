@@ -1,3 +1,4 @@
+import { installControlCenterFixtures } from './control-center-fixtures.mjs'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -67,6 +68,7 @@ try {
       }
       unexpected.push(`${method} ${path}`); return respond({ error: 'Unexpected request' }, 500)
     })
+    await installControlCenterFixtures(page)
     await page.goto(`${origin}/#/latency`)
     await page.getByText('未取得执行授权', { exact: true }).waitFor()
     await page.getByRole('button', { name: '添加任务', exact: true }).click()
@@ -133,7 +135,12 @@ try {
     await page.getByRole('row').filter({ hasText: '保留的目标草稿' }).getByRole('button', { name: '删除', exact: true }).click()
     dialog = page.getByRole('dialog')
     tasks[1] = { ...tasks[1], revision: 3 }
+    const revisionReadback = page.waitForResponse(async response => new URL(response.url()).pathname === '/api/latency-tasks'
+      && response.request().method() === 'GET' && response.status() === 200
+      && (await response.json()).some(task => task.id === 'new-task' && task.revision === 3))
     await page.clock.runFor(5001)
+    await revisionReadback
+    await dialog.getByRole('alert').filter({ hasText: '延迟任务目标或版本已变化' }).waitFor()
     const remove = dialog.getByRole('button', { name: '确认删除', exact: true })
     assert.equal(await remove.isDisabled(), true)
     await remove.evaluate(button => { const disabled = button.disabled; try { button.disabled = false; button.click() } finally { button.disabled = disabled } })

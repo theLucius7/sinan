@@ -11,6 +11,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from urllib.parse import unquote, urlsplit
 
 spec = importlib.util.spec_from_file_location("recovery", Path(__file__).with_name("recovery.py"))
 recovery = importlib.util.module_from_spec(spec)
@@ -75,11 +76,73 @@ class RecoveryTests(unittest.TestCase):
             self.assertTrue(active.exists())
             self.assertFalse(removable.exists())
 
-    def test_native_environment_reads_encoded_database_password(self):
+    def test_isolated_restore_generates_credentials_without_source_login_material(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            (base / "environment").write_text("SINAN_DATABASE_URL=postgres://sinan:example%40password@postgres/sinan\n")
-            self.assertEqual(recovery.env_values(base)["SINAN_DB_PASSWORD"], "example@password")
+            for source in [
+                "SINAN_DATABASE_URL=postgres://sinan:TEST_ONLY_userinfo@postgres/sinan?password=TEST_ONLY_query_override\n",
+                "SINAN_DATABASE_URL=postgres://sinan@postgres/sinan\n",
+                "SINAN_DB_PASSWORD=TEST_ONLY_explicit_legacy\n",
+                "SINAN_DATABASE_URL=postgres://sinan:TEST_ONLY_encoded%40password@postgres/sinan\n",
+            ]:
+                with self.subTest(source=source):
+                    (base / "environment").write_text(source)
+                    before = recovery.sha256(base / "environment")
+                    first = recovery.env_values(base)["SINAN_DB_PASSWORD"]
+                    second = recovery.env_values(base)["SINAN_DB_PASSWORD"]
+                    self.assertRegex(first, r"^[A-Za-z0-9_-]{43}$")
+                    self.assertNotEqual(first, second)
+                    self.assertNotIn("TEST_ONLY", first)
+                    self.assertNotIn(first, source)
+                    self.assertEqual(recovery.sha256(base / "environment"), before)
+
+    def test_restore_uses_the_same_private_destination_password_for_database_and_panel(self):
+        class ControlledRestore(recovery.Restore):
+            def __init__(self, args, manifest):
+                super().__init__(args, manifest)
+                self.environments = {}
+                self.arguments = []
+
+            def fresh(self):
+                return "sha256:" + "b" * 64
+
+            def docker(self, *arguments, **kwargs):
+                self.arguments.append(arguments)
+                if "--env-file" in arguments:
+                    path = Path(arguments[arguments.index("--env-file") + 1])
+                    self.environments[arguments[arguments.index("--name") + 1]] = {
+                        key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())
+                    }
+                    self_test.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                if arguments[-1] == "SHOW server_version_num":
+                    return "160000"
+                if "_sqlx_migrations" in arguments[-1]:
+                    return "[]"
+                return ""
+
+            def healthy(self):
+                return True
+
+        self_test = self
+        with tempfile.TemporaryDirectory() as directory:
+            backup, manifest = self.backup(Path(directory))
+            source = "SINAN_DATABASE_URL=postgres://source:TEST_ONLY_old@source.example/panel?password=TEST_ONLY_actual\n"
+            (backup / "environment").write_text(source)
+            args = argparse.Namespace(backup=backup, project=None, port=18080, keyring_file=None)
+            controlled = ControlledRestore(args, manifest)
+            before = recovery.sha256(backup / "environment")
+            controlled.restore()
+            password = controlled.environments[controlled.postgres]["POSTGRES_PASSWORD"]
+            panel = controlled.environments[controlled.panel]
+            destination = urlsplit(panel["SINAN_DATABASE_URL"])
+            self.assertEqual(unquote(destination.password), password)
+            self.assertEqual(destination.hostname, "postgres")
+            self.assertEqual(destination.path, "/sinan")
+            self.assertNotIn("TEST_ONLY", password)
+            self.assertFalse(any("TEST_ONLY_old" in str(arguments) or "TEST_ONLY_actual" in str(arguments) or password in str(arguments) for arguments in controlled.arguments))
+            self.assertEqual(recovery.sha256(backup / "environment"), before)
+            self.assertTrue(controlled.checks["database_restore"])
+            self.assertTrue(controlled.checks["panel_health"])
 
 
 if __name__ == "__main__":
