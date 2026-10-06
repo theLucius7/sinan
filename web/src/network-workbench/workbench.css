@@ -3,9 +3,8 @@
 .network-workbench input:not([type="checkbox"]),.network-workbench select,.network-workbench textarea { width:100%; min-width:0; max-width:100%; }
 .nw-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; min-width:0; }
 .nw-inline { display:flex !important; align-items:center; gap:.5rem; }
-.nw-tabs,.nw-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
-.nw-tabs [aria-pressed="true"] { font-weight:700; outline:2px solid currentColor; }
-.nw-run-list { display:flex; gap:.5rem; flex-wrap:wrap; }
+.nw-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.nw-run-list { display:flex; gap:10px; flex-wrap:wrap; }
 .network-workbench article { padding:1rem; border:1px solid var(--border,#68707b); border-radius:.6rem; }
 .network-workbench pre { max-height:28rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
 .network-workbench table { width:100%; border-collapse:collapse; }

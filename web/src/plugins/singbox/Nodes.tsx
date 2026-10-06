@@ -208,7 +208,7 @@ export default function Nodes({ serverId, chainsOnly = false, view, selected, in
     {creatingChain && <ChainEditor writeError={() => writeError()} getCurrent={chainCurrent} nodes={nodes.data ?? []} resources={all} sourcesMigrated={migrated}
       servers={enabledServers.filter(server => !filter || server.id === Number(filter))} availableServers={enabledServers}
       onClose={() => setCreatingChain(false)} onSaved={receipt => { setCreatingChain(false); setCreatedChains(receipt.chain_ids); refresh() }} />}
-    <nav className="node-views" aria-label="节点视图">
+    <nav className="node-views ui-tab-list" aria-label="节点视图">
       {views.map(item => <a key={item.key} href={routeHash(item.key)} className={activeView === item.key ? 'active' : ''}
         aria-current={activeView === item.key ? 'page' : undefined}>
         {item.label}

@@ -1,6 +1,7 @@
 .proxy-portal { max-width: 880px; margin: 0 auto; padding: 28px 24px 60px; }
 .proxy-portal > header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
 .proxy-portal > header > span { color: var(--muted); flex: 1; }
+.portal-language { flex: 0 0 auto; }
 .proxy-portal .panel { margin-bottom: 20px; }
 .proxy-portal h1 { font-size: 22px; margin: 0; }
 .proxy-portal .user-usage { margin-bottom: 24px; }

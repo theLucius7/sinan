@@ -42,7 +42,7 @@ export default function Reauthentication() {
     }}>
       <label className="field">当前管理员密码<input type="password" autoComplete="current-password" autoFocus required value={password} onChange={event => setPassword(event.target.value)} disabled={busy} /></label>
       <label className="field">二步验证码<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => setCode(event.target.value)} disabled={busy} /></label>
-      {error && <p role="alert">{error}</p>}<div className="control-actions"><button type="submit" disabled={busy}>{busy ? '正在验证…' : '验证并继续'}</button><button type="button" disabled={busy} onClick={close}>取消操作</button></div>
+      {error && <p role="alert">{error}</p>}<div className="control-actions"><button className="ui-button" type="submit" disabled={busy}>{busy ? '正在验证…' : '验证并继续'}</button><button className="ui-button" type="button" disabled={busy} onClick={close}>取消操作</button></div>
     </form>
   </section></div>
 }

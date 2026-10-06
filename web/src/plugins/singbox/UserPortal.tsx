@@ -6,6 +6,7 @@ import { bytes, time } from '../../format'
 import { useAction } from '../../hooks'
 import { loginPasskey, passkeySupport, registerPasskey } from '../../passkeys'
 import type { PasskeyEntry, PasskeyInfo } from '../../passkeys'
+import { LanguageSelect, useI18n } from '../../i18n'
 import './portal.css'
 
 type View = { configuration: PasskeyInfo } & ({ authenticated: false } | {
@@ -14,6 +15,7 @@ type View = { configuration: PasskeyInfo } & ({ authenticated: false } | {
 })
 
 export default function UserPortal({ account, activation }: { account: string; activation?: string }) {
+  const { t } = useI18n()
   const base = `/api/plugins/sing-box/portal/${account}`
   const bookmark = `${window.location.origin}/#/plugins/sing-box/account/${account}`
   const [token, setToken] = useState(activation)
@@ -26,9 +28,9 @@ export default function UserPortal({ account, activation }: { account: string; a
   const action = useAction()
   const reload = () => setRevision(value => value + 1)
   useEffect(() => {
-    document.title = '代理用户 · 司南'
+    document.title = `${t('代理用户')} · ${t('司南')}`
     if (activation) window.history.replaceState(null, '', `#/plugins/sing-box/account/${account}`)
-  }, [account, activation])
+  }, [account, activation, t])
   useEffect(() => {
     const controller = new AbortController()
     let active = true, pending = false
@@ -62,7 +64,7 @@ export default function UserPortal({ account, activation }: { account: string; a
     }, () => { setEditing(null); setNotice(editing === 'new' ? '新 Passkey 已绑定。' : 'Passkey 已删除，其他用户会话已退出。'); reload() })
   }
   return <main className="proxy-portal">
-    <header><Brand /><span>代理用户</span>{data?.authenticated && <button className="button button-secondary button-small" disabled={action.busy} onClick={() => void action.run(() => api(`${base}/logout`, 'POST', undefined, undefined, false), () => { setData(undefined); setNotice(''); setEditing(null); reload() })}>退出登录</button>}</header>
+    <header><Brand /><span>{t('代理用户')}</span><LanguageSelect className="portal-language" />{data?.authenticated && <button className="button button-secondary button-small" disabled={action.busy} onClick={() => void action.run(() => api(`${base}/logout`, 'POST', undefined, undefined, false), () => { setData(undefined); setNotice(''); setEditing(null); reload() })}>{t('退出登录')}</button>}</header>
     <ErrorNotice message={error} retry={reload} /><ErrorNotice message={!editing ? action.error : ''} />
     {notice && <p className="notice notice-success" role="status">{notice}</p>}
     {loading && !data ? <Loading /> : data?.authenticated ? <>

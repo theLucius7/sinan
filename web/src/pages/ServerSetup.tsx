@@ -58,7 +58,7 @@ export default function ServerSetup({ onClose, onCreated }: { onClose: () => voi
       <div className="server-setup-body">
         <SetupSteps step={1} />
         <ErrorNotice message={draft.error} retry={draft.reload} />
-        <div className="control-actions"><button type="button" disabled={!draft.ready || action.busy} onClick={() => void action.run(() => draft.save({ name, sample, upload, persist, autoUpdate, discover }))}>保存基础信息草稿</button><button type="button" disabled={!draft.ready || !draft.value || action.busy} onClick={() => { const value = draft.value; if (value) { setName(value.name); setSample(value.sample); setUpload(value.upload); setPersist(value.persist); setAutoUpdate(value.autoUpdate); setDiscover(value.discover) } }}>恢复草稿</button><small>资产、拨测与凭据保持当前表单，草稿只保存基础信息和采集设置。</small></div>
+        <div className="control-actions"><button className="ui-button" type="button" disabled={!draft.ready || action.busy} onClick={() => void action.run(() => draft.save({ name, sample, upload, persist, autoUpdate, discover }))}>保存基础信息草稿</button><button className="ui-button" type="button" disabled={!draft.ready || !draft.value || action.busy} onClick={() => { const value = draft.value; if (value) { setName(value.name); setSample(value.sample); setUpload(value.upload); setPersist(value.persist); setAutoUpdate(value.autoUpdate); setDiscover(value.discover) } }}>恢复草稿</button><small>资产、拨测与凭据保持当前表单，草稿只保存基础信息和采集设置。</small></div>
         <div className="server-setup-intro"><span className="server-setup-mark"><Icon name="server" size={25} /></span><div><h3>连接一台新的服务器</h3><p>先设定监控方式，设备接入后自动同步。之后也可以在详情中调整。</p></div></div>
         <fieldset disabled={action.busy}>
           <section className="server-setup-section" aria-labelledby="setup-basics">

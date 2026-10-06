@@ -49,7 +49,7 @@ function fixture(theme) {
     <title>TEST_ONLY 主题状态夹具</title><link rel="icon" href="data:,">${stylesheetLinks}
   </head><body><main style="max-width:780px;margin:0 auto;padding:24px">
     <h1 style="font-size:18px;margin-bottom:20px">主题状态夹具</h1>
-    <nav class="node-views" aria-label="节点视图">
+    <nav class="node-views ui-tab-list" aria-label="节点视图">
       <a id="node-active" class="active" href="#active" aria-current="page">当前视图</a>
       <a id="node-hover" href="#hover">其他视图</a>
     </nav>
@@ -197,17 +197,17 @@ async function run() {
         assert.equal(response.status(), 200)
         const loadedStyles = await page.locator('link[rel="stylesheet"]').evaluateAll(links => links.map(link => ({ path: new URL(link.href).pathname, loaded: Boolean(link.sheet) })))
         assert.deepEqual(loadedStyles, [...assets.keys()].map(path => ({ path, loaded: true })), 'Every actual built CSS asset must load in order')
-        const active = await assertColour(page, '#node-active', '--green', 'Active node navigation must keep its theme accent')
-        assert.equal(await colour(page, '#node-active', 'borderBottomColor'), active)
+        const active = await assertColour(page, '#node-active', '--ink', 'Active node navigation must keep its theme foreground')
+        assert.equal(await colour(page, '#node-active', 'borderBottomColor'), await referenceColour(page, '#node-active', '--green'))
         const idleNode = await colour(page, '#node-hover')
         await hover(page, '#node-hover')
         const hoveredNode = await assertColour(page, '#node-hover', '--green', 'Hovered node navigation must keep its theme accent')
         assert.notEqual(hoveredNode, idleNode, 'Hover must remain distinct from idle navigation')
         await hover(page, '#node-active')
-        await assertColour(page, '#node-active', '--green', 'Hover must preserve active navigation')
+        await assertColour(page, '#node-active', '--green', 'Hovered active navigation must keep its theme accent')
         const idleIcon = await colour(page, '#icon-action')
         await hover(page, '#icon-action')
-        const hoveredIcon = await assertColour(page, '#icon-action', '--ink', 'Hovered icon action must keep its theme foreground')
+        const hoveredIcon = await assertColour(page, '#icon-action', '--green', 'Hovered icon action must use the shared control accent')
         assert.notEqual(hoveredIcon, idleIcon, 'Icon hover must remain distinct from idle')
         const currentStep = await assertColour(page, '#step-current', '#215e49', 'Current setup step must keep its existing state colour')
         const completeStep = await assertColour(page, '#step-complete', '#557762', 'Completed setup step must keep its existing state colour')

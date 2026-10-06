@@ -45,7 +45,7 @@ export default function FleetReconciliation({ job, server, original, run, refres
   const bytes = new TextEncoder().encode(evidence.trim()).length
   return <section className="operations-review"><h4>核对服务器 {server} 的原日常操作</h4>
     <p>原操作：{original}。先取得新的实际只读设备回执，再确认原进程和临时资源。人工结论保留原未知结果，迟到的真实回执仍可记录。</p>
-    <button onClick={() => { const current = requests.current; run(async () => {
+    <button className="ui-button" onClick={() => { const current = requests.current; run(async () => {
       const revision = current.begin()
       if (revision === null) return
       setInspection(null); setReceipt(null); setStopped(false); setCleaned(false); setObservedAt(''); setEvidence('')
@@ -53,7 +53,7 @@ export default function FleetReconciliation({ job, server, original, run, refres
       if (!current.created(revision, created.id)) return
       setInspection(created.id); await refresh()
     }, true) }}>验证身份并发起新的只读核对</button>
-    {inspection && <><p>检查任务：{inspection} · {ready ? '已取得五分钟内的成功设备回执' : '等待有效设备回执'}</p><button onClick={() => { const current = requests.current, request = current.read(); run(async () => {
+    {inspection && <><p>检查任务：{inspection} · {ready ? '已取得五分钟内的成功设备回执' : '等待有效设备回执'}</p><button className="ui-button" onClick={() => { const current = requests.current, request = current.read(); run(async () => {
       if (!request || request.id !== inspection || !current.current(request)) return
       const value = await api<Inspection>(`/api/fleet/operations/${request.id}`)
       if (current.accepts(request, value)) setReceipt(value)
@@ -62,11 +62,11 @@ export default function FleetReconciliation({ job, server, original, run, refres
     <label><input type="checkbox" checked={cleaned} onChange={event => setCleaned(event.target.checked)} />已实际核对并清理临时文件、监听与恢复资源</label>
     <label>实际观察时间<input type="datetime-local" value={observedAt} onChange={event => setObservedAt(event.target.value)} /></label>
     <label>核对方法、来源与失败或未知结论（32 至 4096 字节，不填凭据）<textarea value={evidence} maxLength={4096} onChange={event => setEvidence(event.target.value)} /></label>
-    <button disabled={!inspection || !ready || !stopped || !cleaned || !freshObservation(observedAt, now) || bytes < 32 || bytes > 4096} onClick={() => { const current = requests.current, request = current.read(); run(async () => {
+    <button className="ui-button" disabled={!inspection || !ready || !stopped || !cleaned || !freshObservation(observedAt, now) || bytes < 32 || bytes > 4096} onClick={() => { const current = requests.current, request = current.read(); run(async () => {
       const now = Math.floor(Date.now() / 1000)
       if (!request || !current.current(request) || request.id !== inspection || !freshInspection(receipt, inspection, original, server, now) || !freshObservation(observedAt, now)) return
       await api(`/api/operations/jobs/${job}/reconcile`, 'POST', { server_id: server, operation_id: original, inspection_id: inspection, process_stopped: stopped, cleanup_confirmed: cleaned, observed_at: Math.floor(new Date(observedAt).getTime() / 1000), evidence: evidence.trim() })
       if (current.current(request)) { close(); await refresh() }
-    }, true) }}>验证身份并记录人工核对，停止后续步骤</button><button onClick={close}>保留原任务并关闭表单</button>
+    }, true) }}>验证身份并记录人工核对，停止后续步骤</button><button className="ui-button" onClick={close}>保留原任务并关闭表单</button>
   </section>
 }

@@ -40,6 +40,9 @@ body.has-server-display { min-width: 320px; }
 .d-brand .brand strong { color: var(--d-foreground); font-size: 19px; letter-spacing: 2px; }
 .d-brand .brand small { display: none; }
 .d-header-actions { display: flex; align-items: center; gap: 8px; }
+.server-display .display-language { display: inline-flex; }
+.server-display .display-language select { appearance: none; min-height: 34px; min-width: 112px; padding: 6px 30px 6px 9px; border: 1px solid var(--d-border); border-radius: 7px; color: var(--d-foreground); background-color: var(--d-card-solid); background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%; background-repeat: no-repeat; background-size: 5px 5px; font: inherit; font-size: 11px; }
+.server-display .display-language select:hover, .server-display .display-language select:focus { border-color: var(--d-primary); }
 .server-display .d-icon-button { display: inline-flex; width: 36px; height: 36px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 8px; color: var(--d-muted-text); }
 .server-display .d-icon-button:hover, .d-admin-link:hover { color: var(--d-foreground); background: color-mix(in srgb, var(--d-foreground) 7%, transparent); }
 .d-admin-link { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
@@ -223,6 +226,7 @@ body.has-server-display { min-width: 320px; }
   .d-live-strip > div { padding: 12px 14px; }
   .d-live-strip strong { font-size: 17px; }
   .d-admin-link { padding-inline: 5px; }
+  .server-display .display-language select { min-width: 100px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .server-display *, .server-display *::before, .server-display *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

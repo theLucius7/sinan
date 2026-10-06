@@ -1,7 +1,5 @@
 .network-configuration { display: grid; gap: 18px; }
-.network-tabs,.network-actions,.network-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.network-tabs button { padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface,#fff); color: var(--text,var(--ink)); }
-.network-tabs button[aria-current="page"] { box-shadow: inset 0 -3px var(--accent,var(--green)); }
+.network-actions,.network-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .network-layout { display: grid; grid-template-columns: minmax(180px,260px) minmax(0,1fr); gap: 18px; align-items: start; }
 .network-layout aside,.network-editor,.network-details { padding: 20px; }
 .network-card { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; margin-top: 10px; padding: 14px; background: transparent; border: 1px solid var(--border); border-radius: 10px; color: var(--text,var(--ink)); }

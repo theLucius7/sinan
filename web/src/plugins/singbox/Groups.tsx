@@ -66,7 +66,7 @@ export default function Groups({ initialTab = 'policy-groups' }: { initialTab?: 
   }
   return <>
     <PageHeader eyebrow="sing-box 插件" title="策略与套餐" description="把节点与链路整理成策略组，用套餐设定流量与有效期，在代理用户页面分别分配。"><Refresh onClick={refresh} /><a className="button button-secondary" href="#/plugins/sing-box/nodes">管理代理节点</a><a className="button button-secondary" href="#/plugins/sing-box/users">分配给代理用户</a></PageHeader>
-    <div className="group-tabs" aria-label="管理内容">{(Object.keys(labels) as Tab[]).map(key => <button key={key} className={`button ${tab === key ? 'button-primary' : 'button-secondary'}`} aria-pressed={tab === key} onClick={() => setTab(key)}>{labels[key]}</button>)}</div>
+    <div className="group-tabs ui-tab-list" role="group" aria-label="管理内容">{(Object.keys(labels) as Tab[]).map(key => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{labels[key]}</button>)}</div>
     <ErrorNotice message={policies.error || packages.error || flat.error || resources.error} retry={refresh} />
     <section className="panel">
       {writeError(tab) && <p className="helper" role="status">{writeError(tab)}</p>}

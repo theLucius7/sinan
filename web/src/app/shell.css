@@ -23,15 +23,14 @@
   gap: 6px;
   min-height: 36px;
   padding: 6px 12px;
-  border: 1px solid #dce3d9;
-  border-radius: 7px;
-  background: #fff;
-  color: #586c5d;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 550;
 }
-.menu-toggle:hover { background: #f4f7f1; border-color: #bac9ba; }
-.menu-toggle[aria-expanded="true"] { background: #e7eee5; border-color: #cddccb; color: var(--green); }
+.menu-toggle:hover, .menu-toggle[aria-expanded="true"] { background: var(--soft-green); border-color: var(--green); color: var(--green); }
 
 .sidebar nav { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 2px; }
 .nav-entry { min-width: 0; }
@@ -98,6 +97,8 @@
 .breadcrumb strong { color: #4f6553; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-status { display: flex; align-items: center; gap: 7px; flex-shrink: 0; font-size: 11px; }
 .topbar .global-search { min-width: 0; }
+.topbar-language { flex: 0 0 auto; }
+.topbar-language select { min-width: 112px; }
 .status-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #5d9774; }
 
 .content { width: 100%; max-width: 1480px; flex: 1; margin: 0 auto; padding: 32px 40px 28px; }
@@ -172,6 +173,7 @@
 
 @media (max-width: 600px) {
   .topbar-status { display: none; }
+  .topbar-language select { min-width: 102px; }
   .content { padding: 20px 16px 18px; }
   .app-footer { margin: 0 16px; padding: 16px 0; font-size: 9px; }
 }
@@ -182,8 +184,6 @@
   .topbar-status { display: none; }
 }
 
-:root[data-theme=dark] .menu-toggle { background: var(--surface); color: var(--ink); border-color: var(--border); }
-:root[data-theme=dark] .menu-toggle:hover, :root[data-theme=dark] .menu-toggle[aria-expanded="true"],
 :root[data-theme=dark] .logout-button:hover { background: var(--soft-green); color: var(--green); }
 
 @media (max-width: 360px) {

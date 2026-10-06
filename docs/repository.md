@@ -8,7 +8,7 @@
 | --- | --- |
 | `crates/` | Rust 工作区：公共协议、配置编译、面板、Agent、适配器及原生 TCP 工具 |
 | `plugins/` | 插件面板业务、外部工具包装及固定来源材料；插件业务不回迁到核心 |
-| `web/src/` | 中文 React 界面；前端依赖与构建由 Bun 管理 |
+| `web/src/` | React 界面（简体中文/English）；前端依赖与构建由 Bun 管理 |
 | `web/dist/` | 提交到仓库、由面板嵌入的构建产物；修改源码后生成，不手工编辑 |
 | `deploy/` | Compose、服务定义、安装模板、生成后的独立 bootstrap 入口和发布公钥 |
 | `scripts/` | [面板运维、接入与验收入口](../scripts/README.md)；包含已有 CI 包装脚本 |
@@ -74,6 +74,9 @@
 | `web/src/plugins/` | 插件目录及 sing-box、DDNS、阿里云业务界面 |
 | `web/src/display/`、`statistics/` | 独立服务器看板与统计展示 |
 | `web/src/api.ts`、`hooks.ts`、`components.tsx` | 共享请求、状态钩子和通用组件 |
+| `web/src/i18n.tsx` | 语言上下文、浏览器语言选择、管理员偏好同步及静态界面词典 |
+
+后台分区导航统一使用 `styles.css` 中的 `.ui-tab-list`，按钮通过 `aria-pressed`、页面链接通过 `aria-current="page"` 标记当前项；沿用“管理与安全”的浅底、细边框、6px 圆角与绿色选中态。`.button`、`.ui-button`、`.text-button`、`.icon-button` 和 `.back-link` 共用边框、圆角、悬停、禁用和键盘焦点规则，提供普通、紧凑与图标三种尺寸；主操作与危险操作保留颜色语义。文字操作也使用紧凑描边按钮，按钮组允许换行。页面样式只保留分区间距，不再单独定义导航按钮颜色、尺寸或选中轮廓。
 
 Hash URL 是书签与兼容入口。新增页面要同时考虑路由、导航、管理员访问边界；公开访问只放行明确的看板路由，不据路径前缀推断权限。
 

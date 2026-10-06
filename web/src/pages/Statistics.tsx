@@ -14,7 +14,7 @@ export default function Statistics() {
   const data = servers.data, business = proxy.data
   return <div className="statistics-page">
     <PageHeader eyebrow="运行概览" title="统计仪表盘" description="查看服务器状态、网卡流量与代理业务统计。">
-      <div className="statistics-range" role="group" aria-label="统计时间范围">{[7, 30].map(value => <button key={value} type="button" aria-pressed={days === value} onClick={() => setDays(value)}>近 {value} 天</button>)}</div>
+      <div className="statistics-range ui-tab-list" role="group" aria-label="统计时间范围">{[7, 30].map(value => <button key={value} type="button" aria-pressed={days === value} onClick={() => setDays(value)}>近 {value} 天</button>)}</div>
       <Refresh onClick={() => { servers.reload(); proxy.reload() }} />
     </PageHeader>
     <ErrorNotice message={servers.error} retry={servers.reload} />

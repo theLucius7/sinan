@@ -94,9 +94,5 @@ body:has(.nodes-page) { min-width: 320px; }
 
 /* Node page sections: catalog, chains and subscription sources. Inactive sections
    stay mounted so their drafts and pending confirmations survive switching. */
-.node-views { display: flex; gap: 4px; margin: 4px 0 20px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: thin; }
-.node-views a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: #677368; font-size: 13px; font-weight: 550; white-space: nowrap; }
-.node-views a:hover { color: var(--green); }
-.node-views a.active { border-bottom-color: var(--green); color: var(--green); font-weight: 650; }
+.node-views { margin: 4px 0 20px; }
 .node-view[hidden] { display: none; }
-@media (max-width: 600px) { .node-views a { padding: 9px 10px; font-size: 12px; } }

@@ -56,7 +56,7 @@ export default function CancellationReminders({ run, version }: { run: ActionRun
   return <section className="operations-card">
     <h3>计划退订日期提醒</h3>
     <p>每条退订记录默认关闭，只有明确启用后才记录站内提醒事件。同一退订记录已有提醒事件后不再重建；渠道实际送达状态在故障事件详情查看。提醒不执行退订、停止设备代理或付款。</p>
-    <button type="button" onClick={() => run(() => refresh())}>读取提醒状态</button>
+    <button className="ui-button" type="button" onClick={() => run(() => refresh())}>读取提醒状态</button>
     {loadError && <p className="operations-error" role="alert">{loadError}{records && '；下方保留上次读取结果和未保存的编辑。'}</p>}
     {records === null && !loadError && <p role="status">正在读取退订记录。</p>}
     {records?.length === 0 && <p>暂无可读取的退订记录；先在服务器费用台账登记退订计划及生效日期。</p>}
@@ -67,7 +67,7 @@ export default function CancellationReminders({ run, version }: { run: ActionRun
         <td>{record.server_name}<small>服务器编号：{record.server_id}</small><small>退订参考：{record.reference || '未填写'}</small><small>记录编号：{record.record_id}</small></td>
         <td>{record.valid_until === null ? '缺少生效日期，不能启用提醒' : `计划退订生效 ${time(record.valid_until)}`}<small>{record.notified_at === null ? '尚未记录提醒事件' : `提醒事件已记录 ${time(record.notified_at)}，不再重建`}</small>{record.last_error && <small>上次记录提醒事件错误：{record.last_error}</small>}</td>
         <td><label><input type="checkbox" checked={draft.enabled} disabled={Boolean(saving[record.record_id]) || (record.valid_until === null && !draft.enabled)} onChange={event => change(record.record_id, { enabled: event.target.checked })} />明确启用此记录提醒</label><label>提前多久提醒<select value={draft.lead_secs} disabled={Boolean(saving[record.record_id])} onChange={event => change(record.record_id, { lead_secs: Number(event.target.value) })}>{!leadOptions.some(([seconds]) => seconds === draft.lead_secs) && <option value={draft.lead_secs}>{draft.lead_secs} 秒（已有设置）</option>}{leadOptions.map(([seconds, name]) => <option key={seconds} value={seconds}>{name}</option>)}</select></label></td>
-        <td><button type="button" disabled={!changed || Boolean(saving[record.record_id]) || (draft.enabled && record.valid_until === null)} onClick={() => save(record, { ...draft })}>{saving[record.record_id] ? '正在保存' : '保存此记录设置'}</button>{errors[record.record_id] && <p className="operations-error" role="alert">{errors[record.record_id]}</p>}{messages[record.record_id] && <p role="status">{messages[record.record_id]}</p>}{changed && <small>此条记录有未保存的修改。</small>}</td>
+        <td><button className="ui-button" type="button" disabled={!changed || Boolean(saving[record.record_id]) || (draft.enabled && record.valid_until === null)} onClick={() => save(record, { ...draft })}>{saving[record.record_id] ? '正在保存' : '保存此记录设置'}</button>{errors[record.record_id] && <p className="operations-error" role="alert">{errors[record.record_id]}</p>}{messages[record.record_id] && <p role="status">{messages[record.record_id]}</p>}{changed && <small>此条记录有未保存的修改。</small>}</td>
       </tr>
     })}</tbody></table></div>
   </section>

@@ -66,7 +66,7 @@ export default function SupplierComparison({ run, version }: { run: ActionRunner
       <label>开始时间（本地时区）<input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
       <label>结束时间（本地时区）<input type="datetime-local" value={until} onChange={event => setUntil(event.target.value)} /></label>
     </div>
-    <div className="operations-actions">{[7, 30, 90, 365].map(days => <button key={days} type="button" onClick={() => chooseDays(days)}>最近 {days} 天</button>)}<button type="button" disabled={loading} onClick={() => run(refresh)}>读取所选区间</button></div></>}
+    <div className="operations-actions">{[7, 30, 90, 365].map(days => <button className="ui-button" key={days} type="button" onClick={() => chooseDays(days)}>最近 {days} 天</button>)}<button className="ui-button" type="button" disabled={loading} onClick={() => run(refresh)}>读取所选区间</button></div></>}
     {error && <p className="operations-error" role="alert">{error}{comparison && '；下方保留上次读取结果。'}</p>}
     {loading && <p role="status">正在读取自己的观测记录。</p>}
     {comparison && <>

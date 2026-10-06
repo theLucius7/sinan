@@ -4,7 +4,7 @@ import type { AssetDraft, TrafficUnit } from '../server-assets'
 
 export function SetupNavigation({ monitoring = false }: { monitoring?: boolean }) {
   const sections = [['setup-basics', '名称'], ['setup-labels', '地区标签'], ['setup-cost', '成本到期'], ['setup-traffic', '流量额度'], ['setup-operations', '告警下载'], ...(monitoring ? [['setup-monitoring', '监控'], ['setup-probes', '拨测']] : [])]
-  return <nav className="server-setup-shortcuts" aria-label="配置分区">{sections.map(([id, title]) => <button type="button" key={id} onClick={() => document.getElementById(id)?.closest('section')?.scrollIntoView({ block: 'start' })}>{title}</button>)}</nav>
+  return <nav className="server-setup-shortcuts ui-tab-list" aria-label="配置分区">{sections.map(([id, title]) => <button type="button" key={id} onClick={() => document.getElementById(id)?.closest('section')?.scrollIntoView({ block: 'start' })}>{title}</button>)}</nav>
 }
 
 export default function ServerAssetFields({ value, onChange }: { value: AssetDraft; onChange: (value: AssetDraft) => void }) {

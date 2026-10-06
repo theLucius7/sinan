@@ -7,11 +7,13 @@ import AdminShell from './app/AdminShell'
 import Login from './app/Login'
 import { currentNavigation } from './app/navigation'
 import { resolveRoute } from './app/routes'
+import { useI18n } from './i18n'
 
 const ServerDisplay = lazy(() => import('./display/ServerDisplay'))
 const UserPortal = lazy(() => import('./plugins/singbox/UserPortal'))
 
 export default function App() {
+  const { t } = useI18n()
   const [session, setSession] = useState<boolean | null>(null)
   const [publicDashboard, setPublicDashboard] = useState(false)
   const [accessRevision, setAccessRevision] = useState(0)
@@ -44,7 +46,7 @@ export default function App() {
       }
     })
     const unauthorized = () => {
-      if (sessionRef.current) setNotice('登录已过期，请重新登录。')
+      if (sessionRef.current) setNotice(t('登录已过期，请重新登录。'))
       setSession(false)
       setPublicDashboard(false)
       setAccessRevision(value => value + 1)
@@ -58,12 +60,12 @@ export default function App() {
       window.removeEventListener('sinan:unauthorized', unauthorized)
       window.removeEventListener('hashchange', hash)
     }
-  }, [accessRevision])
+  }, [accessRevision, t])
 
   const route = resolveRoute(path)
   const current = currentNavigation(route)
-  const title = current?.label ?? '控制面板'
-  useEffect(() => { document.title = `${title} · 司南` }, [title])
+  const title = t(current?.label ?? '控制面板')
+  useEffect(() => { document.title = `${title} · ${t('司南')}` }, [title, t])
 
   if (route.page === 'proxy-portal') return <Suspense fallback={<div className="boot"><Brand /><Loading /></div>}><UserPortal key={route.account} account={route.account} activation={route.activation} /></Suspense>
   if (session === null) return <div className="boot"><Brand /><Loading /></div>
